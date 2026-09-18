@@ -24,7 +24,11 @@ export function glyphs(points: Point[], style: ArtStyle, time: number) {
   return points.map(p => {
     const seed = (Math.floor(p.x * 7) * 31 + Math.floor(p.y * 7) * 17) % 997;
     const phase = time * .0015 + seed;
-    return { x: p.x + Math.sin(phase) * style.motion / 22, y: p.y + Math.cos(phase) * style.motion / 22, char: chars[Math.floor(seed + time / 240) % chars.length], alpha: .68 + (Math.sin(seed) + 1) * .16, color: style.colorMode === 'source' ? p.color : themes[style.palette].ink };
+    const interval = 3500 + (seed * 19) % 2000;
+    const offset = (seed * 151) % interval;
+    const step = Math.floor((time + offset) / interval);
+    const charIndex = (((seed * 31337) ^ (step * 15485863)) >>> 0) % chars.length;
+    return { x: p.x + Math.sin(phase) * style.motion / 22, y: p.y + Math.cos(phase) * style.motion / 22, char: chars[charIndex], alpha: .68 + (Math.sin(seed) + 1) * .16, color: style.colorMode === 'source' ? p.color : themes[style.palette].ink };
   });
 }
 export function drawGlyphs(ctx: CanvasRenderingContext2D, points: Point[], style: ArtStyle, time: number, w: number, h: number) {
