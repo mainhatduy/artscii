@@ -57,7 +57,7 @@ Change `activeIndex` to morph. `density` is grid spacing (smaller means more cha
 
 Interface fonts use Google Fonts with system fallbacks. No image or artwork is sent to a server. Built-in masks are original simplified silhouettes, not extracted artwork from the reference website.
 
-`maxTimeSteps` sets the number of seeded random sampling opportunities over one full 2π loop (default 64; studio range 4–512). Each cell has its own phase and a sparse change budget based on elapsed seconds. More steps offer finer, more varied change times without multiplying the change rate. Characters switch discretely and hold for at least 800 ms; some cells stay unchanged for an entire loop. Optional `animationSeed` (default 23) reproduces the schedule. Preview and GIF/WebP/SVG exports share these settings. The entire pattern still repeats after one loop; time steps do not change its duration or the export frame rate. Exported motion is sampled at the output frame times, so extra internal steps do not create extra frames.
+`maxTimeSteps` sets the number of seeded random sampling opportunities over one full 2π loop (default 64; studio range 4–512). Each cell has its own phase and a sparse change budget based on elapsed seconds. More steps offer finer, more varied change times without multiplying the change rate. Characters switch discretely and hold for at least 800 ms; some cells stay unchanged for an entire loop. Optional `animationSeed` (default 23) reproduces the schedule. Preview and GIF/WebP/SVG exports share these settings. The entire pattern still repeats after one loop; time steps do not change its duration or the export frame rate. GIF/WebP sample motion at their frame times. SVG stores actual per-cell character changes and continuous wander paths; extra internal steps do not create extra exported frames.
 
 ## Animated inputs and exports
 
@@ -71,8 +71,8 @@ Animated SVGs may loop indefinitely, so **Animated SVG capture settings** choose
 
 - Input limits: 10 MB, 300 frames, 30 seconds, 16 megapixels, 8192 pixels per side. Frames are normalized to a 250 × 280 sampling buffer; ASCII coordinates remain 500 × 560. Blank frames inside a visible animation are preserved.
 - GIF encoding runs in a worker. WebP uses native still-image encoding plus an animated RIFF container. No uploads or encoding service are used.
-- SVG exports contain real text characters and discrete frame visibility animations. The textured background is an embedded PNG. This makes the file self-contained, but it may be larger than GIF/WebP; SVG output is limited to 40 MB, raster animation output to 64 MB.
-- Static images can be exported as a 2–10-second character/wander animation. Source animation timing takes priority over those controls.
+- SVG exports reuse each cell and its character variants, with sparse timelines for character changes, source colors, and presence. Wander follows a continuous motion path independent of FPS. Solid and untextured gradient backgrounds stay vector; grain uses one embedded PNG. SVG output is limited to 40 MB, raster animation output to 64 MB.
+- Static-image preview and all exports use the same 4-second character/wander cycle. Playback duration (4 or 8 seconds in the dialog) repeats that cycle instead of regenerating its random schedule. SVG has no FPS control: looping stores one cycle indefinitely; finite playback repeats the same data for the selected duration, then freezes. GIF/WebP retain FPS controls. Animated sources use their original cycle duration and source frame timing.
 - Reduced-motion preferences pause automatic preview motion. Explicit animated export still generates all frames.
 
 ## Verification

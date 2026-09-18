@@ -165,35 +165,88 @@ await test('Animated WebP output and input round-trip', async () => {
   assert(decoded.frames[0].pixels.data.toString() !== decoded.frames[1].pixels.data.toString(), 'WebP source frames collapsed');
   preview(blob, 'test-ascii.webp');
 });
-await test('Animated SVG export contains escaped vector text and exact timeline', async () => {
-  const blob = await exportAnimation(source, style, 'svg', options);
-  const text = await blob.text(); const doc = new DOMParser().parseFromString(text, 'image/svg+xml');
-  assert(!doc.querySelector('parsererror'), 'Malformed XML with special characters');
-  assert(doc.querySelectorAll('animate').length === 3 && doc.querySelectorAll('text').length > 10, 'Missing vector frames');
-  assert(doc.querySelector('animate')?.getAttribute('dur') === '0.5s', 'SVG duration changed');
-  preview(blob, 'test-ascii.svg');
-});
-await test('Export samples the shared loop at cumulative source delays, without duplicating the endpoint', async () => {
-  for (const input of [source, { ...source, animated: false, frames: [source.frames[0]] }]) {
-    const exportOptions = { ...options, duration: 4000 };
-    const duration = input.animated ? input.duration : exportOptions.duration;
-    const exportStyle = { ...style, motion: 35, animationSeed: 42, maxTimeSteps: 128 };
-    const blob = await exportAnimation(input, exportStyle, 'svg', exportOptions);
+await test('Compact SVG preserves XML, source colors, blank frames and continuous preview timing', async () => {
+  const blank = { pixels: new ImageData(250, 280), delay: 250 };
+  const animated = { ...source, duration: 750, frames: [source.frames[0], blank, source.frames[1], { ...source.frames[0], delay: 150 }] };
+  const staticSource = { ...source, animated: false, frames: [source.frames[0]] };
+  for (const input of [animated, staticSource]) {
+    const exportStyle = { ...style, motion: 35, animationSeed: 42, maxTimeSteps: 128, bgMode: 'transparent' as const };
+    const blob = await exportAnimation(input, exportStyle, 'svg', { ...options, duration: 8000, loop: true });
     const doc = new DOMParser().parseFromString(await blob.text(), 'image/svg+xml');
-    const groups = [...doc.querySelectorAll('g')];
-    assert(groups.length === (input.animated ? 3 : 40), 'Extra endpoint or missing frames');
-    let time = 0;
-    groups.forEach((group, i) => {
-      const frame = input.frames[input.animated ? i : 0];
-      const expected = glyphs(samplePixels(frame.pixels, style.density), exportStyle, time, duration);
-      const actual = [...group.querySelectorAll('text')];
-      assert(actual.length === expected.length, 'Missing cells');
-      actual.forEach((node, j) => {
-        assert(node.textContent === expected[j].char && node.getAttribute('x') === expected[j].x.toFixed(2) && node.getAttribute('y') === expected[j].y.toFixed(2), 'Export differs from shared renderer timing');
-      });
-      time += input.animated ? frame.delay : 1000 / options.fps;
-    });
+    assert(!doc.querySelector('parsererror'), 'Malformed XML');
+    const root = document.importNode(doc.documentElement, true) as unknown as SVGSVGElement;
+    document.body.append(root); root.pauseAnimations();
+    const duration = input.animated ? input.duration : 4000;
+    try {
+      for (const time of [0, 99, 101, 349, 351, 599, 601, 1234, 3999, 4001, 6234]) {
+        root.setCurrentTime(time / 1000); root.getBoundingClientRect();
+        const frame = input.frames[input.animated ? frameAtTime(input.frames.map(f => f.delay), time) : 0];
+        const expected = glyphs(samplePixels(frame.pixels, style.density), exportStyle, time, duration);
+        const parent = root.querySelector('g')!;
+        const visible = [...parent.children].filter(el => el.tagName === 'g' && getComputedStyle(el).display !== 'none') as SVGGElement[];
+        assert(visible.length === expected.length, `Presence differs at ${time}`);
+        const byPosition = new Map(visible.map(g => [g.getAttribute('transform'), g]));
+        const points = samplePixels(frame.pixels, style.density);
+        expected.forEach((p, i) => {
+          const fmt = (n: number) => String(+n.toFixed(6));
+          const group = byPosition.get(`translate(${fmt(points[i].x)} ${fmt(points[i].y)})`)!;
+          const text = [...group.querySelectorAll('text')].filter(el => getComputedStyle(el).visibility === 'visible');
+          assert(text.length === 1 && text[0].firstChild?.textContent === p.char, `Character differs at ${time}`);
+          assert(getComputedStyle(group).fill.replaceAll(' ', '') === p.color.replaceAll(' ', ''), 'Source color differs');
+          const m = parent.getCTM()!.inverse().multiply(group.getCTM()!);
+          assert(Math.abs(m.e - p.x) < .03 && Math.abs(m.f - p.y) < .03, `Wander differs at ${time}: ${m.e},${m.f} vs ${p.x},${p.y}`);
+        });
+      }
+    } finally { root.remove(); }
+    preview(blob, input.animated ? 'compact-source.svg' : 'compact-static.svg');
   }
+});
+await test('SVG size is independent of FPS and repeated duration; stable cells have no animation', async () => {
+  const input = { ...source, animated: false, frames: [source.frames[0]] };
+  const simple = { ...style, characters: '🙂', motion: 0, bgMode: 'transparent' as const };
+  const first = await exportAnimation(input, simple, 'svg', { ...options, duration: 4000, fps: 10 });
+  const second = await exportAnimation(input, simple, 'svg', { ...options, duration: 8000, fps: 30 });
+  assert(await first.text() === await second.text(), 'Looping SVG depends on capture duration/FPS');
+  const doc = new DOMParser().parseFromString(await first.text(), 'image/svg+xml');
+  const count = samplePixels(input.frames[0].pixels, style.density).length;
+  assert(doc.querySelectorAll('text').length === count && !doc.querySelector('animate,animateMotion'), 'Static cells duplicated or animated');
+  assert(first.size < count * 250, 'Static SVG unexpectedly large');
+});
+await test('SVG finite playback freezes after two preview cycles', async () => {
+  const input = { ...source, animated: false, frames: [source.frames[0]] };
+  const blob = await exportAnimation(input, { ...style, motion: 35, bgMode: 'transparent' }, 'svg', { ...options, duration: 8000, loop: false });
+  const doc = new DOMParser().parseFromString(await blob.text(), 'image/svg+xml');
+  const root = document.importNode(doc.documentElement, true) as unknown as SVGSVGElement;
+  document.body.append(root); root.pauseAnimations();
+  try {
+    const state = (time: number) => {
+      root.setCurrentTime(time); root.getBoundingClientRect();
+      return [...root.querySelectorAll('text')].filter(t => getComputedStyle(t).visibility === 'visible').map(t => [t.firstChild?.textContent, t.getCTM()?.e, t.getCTM()?.f]);
+    };
+    assert(JSON.stringify(state(8)) === JSON.stringify(state(10)), 'Finite SVG did not freeze');
+    assert(JSON.stringify(state(1)) !== JSON.stringify(state(2)), 'Finite SVG did not animate');
+    assert([...root.querySelectorAll('animate,animateMotion')].every(a => a.getAttribute('repeatCount') === '2'), 'Playback changes cycle duration');
+  } finally { root.remove(); }
+});
+await test('Compact SVG re-import preserves initially blank and disappearing cells', async () => {
+  const blank = { pixels: new ImageData(250, 280), delay: 200 };
+  const input = { ...source, duration: 1000, frames: [blank, { ...source.frames[0], delay: 200 }, blank, { ...source.frames[1], delay: 400 }] };
+  const blob = await exportAnimation(input, { ...style, density: 30, characters: '@', motion: 0, bgMode: 'transparent' }, 'svg', options);
+  const decoded = await loadMedia(blob, { svgDuration: 1000, svgFps: 10 });
+  const counts = decoded.frames.map(f => samplePixels(f.pixels, 9).length);
+  assert(counts[0] === 0 && counts[1] === 0 && counts[4] === 0 && counts[5] === 0, `Blank frames lost: ${counts}`);
+  assert(counts[2] > 0 && counts[3] > 0 && counts[6] > 0, `Visible frames lost: ${counts}`);
+});
+await test('Identical source frames collapse into unchanged cell tracks and SVG cancellation works', async () => {
+  const single = { ...source, duration: 4000, frames: [{ ...source.frames[0], delay: 4000 }] };
+  const repeated = { ...single, frames: Array.from({ length: 40 }, () => ({ ...source.frames[0], delay: 100 })) };
+  const first = await exportAnimation(single, { ...style, motion: 35 }, 'svg', options);
+  const second = await exportAnimation(repeated, { ...style, motion: 35 }, 'svg', options);
+  assert(await first.text() === await second.text(), 'Identical frames add redundant SVG data');
+  const controller = new AbortController(); let cancelled = false;
+  try { await exportAnimation(repeated, style, 'svg', { ...options, signal: controller.signal, onProgress: () => controller.abort() }); }
+  catch (e) { cancelled = e instanceof DOMException && e.name === 'AbortError'; }
+  assert(cancelled, 'SVG export ignored cancellation');
 });
 await test('SMIL SVG input samples changing geometry', async () => {
   const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100" viewBox="0 0 200 100"><rect x="10" y="20" width="30" height="30" fill="red"><animate attributeName="x" values="10;150;10" dur="1s" repeatCount="indefinite"/></rect></svg>';
@@ -250,7 +303,7 @@ await test('WebP partial frame offsets, blending and disposal are composited', a
   function frame(data: Uint8Array, x: number, y: number, w: number, h: number, flags: number) { const header = new Uint8Array(16); write24(header,0,x/2);write24(header,3,y/2);write24(header,6,w-1);write24(header,9,h-1);write24(header,12,100);header[15]=flags;return chunk('ANMF',concat([header,data])); }
   const anim = new Uint8Array(6);
   const bytes = riff([vp8x(8,8,18),chunk('ANIM',anim),frame(full,0,0,8,8,2),frame(green,2,2,2,2,1),frame(blue,4,4,2,2,0)]);
-  const decoded = await loadMedia(new Blob([bytes],{type:'image/webp'}));
+  const decoded = await loadMedia(new Blob([new Uint8Array(bytes)],{type:'image/webp'}));
   const pixel = (frame:number,x:number,y:number) => [...decoded.frames[frame].pixels.data.slice((y*250+x)*4,(y*250+x)*4+4)];
   assert(pixel(1,95,100)[1]>200,'Partial green patch missing');
   assert(pixel(2,95,100)[3]===0,'Disposed patch not cleared');

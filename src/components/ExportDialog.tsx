@@ -32,12 +32,19 @@ export function ExportDialog({ art, source, onClose, onMessage }: Props) {
   return <dialog ref={dialog} className="modal export-dialog" onCancel={e => { e.preventDefault(); if (busy) controller.current?.abort(); else onClose(); }} onClick={e => { if (e.target === e.currentTarget && !busy) onClose(); }} aria-labelledby="export-title">
     <button className="modal-close icon-button" aria-label={busy ? 'Cancel export' : 'Close export'} onClick={() => { if (busy) controller.current?.abort(); else onClose(); }}><X size={20} /></button>
     <span className="eyebrow">CHARACTERS IN MOTION</span><h2 id="export-title">Keep it moving.</h2>
-    <p>{source.animated ? `${source.format} source · ${source.frames.length} frames · ${(source.duration / 1000).toFixed(2)}s. Original frame timing is preserved.` : 'Export a character animation of the selected shape. Shape cycling and pointer interactions are not included.'}</p>
+    <p>{source.animated ? `${source.format} source · ${source.frames.length} frames · ${(source.duration / 1000).toFixed(2)}s. Source frame timing is preserved.` : 'Export a character animation of the selected shape. Shape cycling and pointer interactions are not included.'}</p>
     <fieldset disabled={busy} className="export-options">
       <label htmlFor="export-format">Animation format</label><select id="export-format" value={format} onChange={e => setFormat(e.target.value as ExportFormat)}><option value="gif">GIF — widely supported</option><option value="webp">Animated WebP — compact image</option><option value="svg">Animated SVG — vector characters</option></select>
-      <p className="export-help">{format === 'svg' ? 'Self-contained SVG with real text and frame animation. Grain is embedded as an image; dense animations can create large files.' : format === 'gif' ? '256-color animation. GIF timing is rounded to hundredths of a second.' : 'Full-color WebP animation. Best for modern browsers and websites.'}</p>
+      <p className="export-help">{format === 'svg' ? 'Compact SVG: characters are reused, changes keep their exact timing, and wander stays smooth without a frame rate. Grain is embedded as an image.' : format === 'gif' ? '256-color animation. GIF timing is rounded to hundredths of a second.' : 'Full-color WebP animation. Best for modern browsers and websites.'}</p>
       <label htmlFor="export-width">Output size</label><select id="export-width" value={width} onChange={e => setWidth(+e.target.value)}>{[480, 640, 960].map(w => <option key={w} value={w}>{w} × {Math.round(w * 620 / 650)} px</option>)}</select>
-      {!source.animated && <div className="export-timing"><label>Duration<select aria-label="Export duration" value={duration} onChange={e => setDuration(+e.target.value)}>{[2, 4, 6, 8, 10].map(n => <option key={n} value={n}>{n} seconds</option>)}</select></label><label>Frame rate<select aria-label="Export frame rate" value={fps} onChange={e => setFps(+e.target.value)}>{[10, 15, 24, 30].map(n => <option key={n} value={n}>{n} fps</option>)}</select></label></div>}
+      {!source.animated && <>
+        <p className="export-help">The preview repeats every 4 seconds. Export keeps the same character timing and wander. Time steps change the timing choices, not the frame rate.</p>
+        <div className="export-timing">
+          {(format !== 'svg' || !loop) && <label>Playback duration<select aria-label="Export duration" value={duration} onChange={e => setDuration(+e.target.value)}>{[4, 8].map(n => <option key={n} value={n}>{n} seconds · {n / 4} {n === 4 ? 'cycle' : 'cycles'}</option>)}</select></label>}
+          {format !== 'svg' && <label>Frame rate<select aria-label="Export frame rate" value={fps} onChange={e => setFps(+e.target.value)}>{[10, 15, 24, 30].map(n => <option key={n} value={n}>{n} fps</option>)}</select></label>}
+        </div>
+        {format === 'svg' && loop && <p className="export-help">One 4-second cycle repeats indefinitely; extra cycles do not add file size.</p>}
+      </>}
       <label className="loop-checkbox"><input type="checkbox" checked={loop} onChange={e => setLoop(e.target.checked)} /> Loop animation</label>
     </fieldset>
     {error && <p role="alert" className="export-error">{error}</p>}

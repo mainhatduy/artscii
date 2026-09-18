@@ -87,7 +87,7 @@ function createSchedule(x: number, y: number, duration: number, seed: number, st
 }
 
 /** Sparse sample-and-hold on a seeded, cyclic time-step schedule. */
-function heldCharacter(time: number, x: number, y: number, duration: number, seed: number, maxTimeSteps: number) {
+export function characterSchedule(x: number, y: number, duration: number, seed = DEFAULT_ANIMATION_SEED, maxTimeSteps = DEFAULT_MAX_TIME_STEPS): Readonly<CharacterSchedule> {
   const steps = normalizeTimeSteps(maxTimeSteps);
   const configKey = `${duration}:${seed}:${steps}`;
   let cache = scheduleCaches.get(configKey);
@@ -102,6 +102,11 @@ function heldCharacter(time: number, x: number, y: number, duration: number, see
     if (cache.size >= 32768) cache.clear();
     cache.set(cellKey, schedule);
   }
+  return schedule;
+}
+
+function heldCharacter(time: number, x: number, y: number, duration: number, seed: number, maxTimeSteps: number) {
+  const schedule = characterSchedule(x, y, duration, seed, maxTimeSteps);
   const localTime = ((time % duration) + duration) % duration;
   let value = schedule.changes.at(-1)?.value ?? schedule.base;
   for (const change of schedule.changes) {
@@ -115,11 +120,15 @@ function heldCharacter(time: number, x: number, y: number, duration: number, see
 export function sampleGlyphLoop(time: number, x: number, y: number, duration = DEFAULT_LOOP_DURATION, seed = DEFAULT_ANIMATION_SEED, maxTimeSteps = DEFAULT_MAX_TIME_STEPS) {
   const phase = loopPhase(time, duration);
   const cellPhase = cellRandom(x, y, seed, 3) * TAU;
-  const cycles = Math.max(1, Math.round(duration / (TAU / .0015)));
+  const cycles = wanderCycles(duration);
   return {
     character: heldCharacter(time, x, y, duration, seed, maxTimeSteps),
     dx: Math.sin(cycles * phase + cellPhase),
     dy: Math.cos(cycles * phase + cellPhase),
     alpha: .68 + (Math.sin(cellPhase) + 1) * .16,
   };
+}
+
+export function wanderCycles(duration: number) {
+  return Math.max(1, Math.round(duration / (TAU / .0015)));
 }
