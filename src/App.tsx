@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ArrowDownToLine, ArrowLeft, ArrowRight, ArrowUpRight, Check, ChevronDown, Code2, Expand, ImagePlus, Info, Maximize2, Pause, Play, RotateCcw, Shuffle, Sparkles, Upload, X } from 'lucide-react';
 import { AsciiMorph, type AsciiMorphHandle, type BgMode, type Palette, sampleImage } from './components/AsciiMorph';
 import { isLightColor } from './lib/render';
+import { DEFAULT_MAX_TIME_STEPS, MAX_TIME_STEPS } from './lib/loop-noise';
 import { ExportDialog } from './components/ExportDialog';
 import { UnicodePicker } from './components/UnicodePicker';
 import { loadMedia } from './lib/media';
@@ -49,6 +50,7 @@ function App() {
   const [density, setDensity] = useState(9);
   const [duration, setDuration] = useState(1800);
   const [motion, setMotion] = useState(35);
+  const [maxTimeSteps, setMaxTimeSteps] = useState(DEFAULT_MAX_TIME_STEPS);
   const [playing, setPlaying] = useState(() => !matchMedia('(prefers-reduced-motion: reduce)').matches);
   const [loop, setLoop] = useState(false);
   const [grain, setGrain] = useState(true);
@@ -98,6 +100,7 @@ function App() {
     setDensity(9);
     setDuration(1800);
     setMotion(35);
+    setMaxTimeSteps(DEFAULT_MAX_TIME_STEPS);
     setPalette('lagoon');
     setBgMode('theme');
     setBgColor('#0d1117');
@@ -111,7 +114,7 @@ function App() {
     setToast('Back to a fresh canvas.');
   }
 
-  const code = `<AsciiMorph\n  images={${JSON.stringify(uploaded && active === 4 ? ['/your-image.png'] : presets.map(p => p.file), null, 2)}}\n  activeIndex={${active === 4 ? 0 : active}}\n  characters=${JSON.stringify(characters)}\n  density={${density}}\n  morphDuration={${duration}}\n  colorMode="${sourceColor ? 'source' : 'mono'}"\n  palette="${palette}"\n  bgMode="${bgMode}"\n  bgColor="${bgColor}"\n  motion={${motion}}\n  grain={${grain}}\n  playing={${playing}}\n/>`;
+  const code = `<AsciiMorph\n  images={${JSON.stringify(uploaded && active === 4 ? ['/your-image.png'] : presets.map(p => p.file), null, 2)}}\n  activeIndex={${active === 4 ? 0 : active}}\n  characters=${JSON.stringify(characters)}\n  density={${density}}\n  morphDuration={${duration}}\n  colorMode="${sourceColor ? 'source' : 'mono'}"\n  palette="${palette}"\n  bgMode="${bgMode}"\n  bgColor="${bgColor}"\n  motion={${motion}}\n  maxTimeSteps={${maxTimeSteps}}\n  grain={${grain}}\n  playing={${playing}}\n/>`;
   return (
     <div className="app-shell">
       <header className="site-header">
@@ -127,7 +130,7 @@ function App() {
           <div className="preview-panel">
             <div className="panel-toolbar"><div className="toolbar-title"><span className="live-dot" /> LIVE PREVIEW <span className="toolbar-slash">/</span> <span className="current-name">{selected.name}</span></div><button className="icon-button" title={expanded ? 'Close expanded preview' : 'Expand preview'} aria-label={expanded ? 'Close expanded preview' : 'Expand preview'} onClick={() => setExpanded(!expanded)}>{expanded ? <X size={16} /> : <Expand size={16} />}</button></div>
             <div className={`art-stage ${dragging ? 'dragging' : ''} ${bgMode === 'transparent' ? 'stage-transparent' : ''}`} onDragOver={e => { e.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={e => { e.preventDefault(); setDragging(false); void upload(e.dataTransfer.files[0]); }}>
-              <AsciiMorph ref={art} images={items.map(p => p.file)} activeIndex={active} source={active === 4 ? uploaded?.source : undefined} onSource={setSourceInfo} characters={characters} density={density} morphDuration={duration} colorMode={sourceColor ? 'source' : 'mono'} palette={palette} bgMode={bgMode} bgColor={bgColor} playing={playing} motion={motion} grain={grain} onCount={setCount} onError={setToast} />
+              <AsciiMorph ref={art} images={items.map(p => p.file)} activeIndex={active} source={active === 4 ? uploaded?.source : undefined} onSource={setSourceInfo} characters={characters} density={density} morphDuration={duration} colorMode={sourceColor ? 'source' : 'mono'} palette={palette} bgMode={bgMode} bgColor={bgColor} playing={playing} motion={motion} maxTimeSteps={maxTimeSteps} grain={grain} onCount={setCount} onError={setToast} />
               <div className={`stage-overlay ${isOverlayDark ? 'dark-ink' : ''}`}><div className="stage-top"><span>FORM NO. 0{active + 1}</span><span>ASCII / EXPLORATIONS</span></div><div className="stage-heading">{selected.name}<span>{active === 0 ? 'Built from characters. Made to move.' : 'A familiar form. A different language.'}</span></div><div className="stage-bottom"><span><span className="crosshair">+</span> MOVE YOUR CURSOR. MAKE A LITTLE CHAOS.</span><span>500 × 560</span></div></div>
               {loadProgress !== null && <div className="loading-overlay" role="status"><span>Decoding animation… {loadProgress}%</span><progress max="100" value={loadProgress} /><button onClick={() => uploadTask.current?.abort()}>Cancel</button></div>}
               {dragging && <div className="drop-overlay"><Upload size={30} /> Drop an image to bring it to life</div>}
@@ -193,7 +196,7 @@ function App() {
               <div className="toggle-row"><span>Original image colors</span><button className="toggle" role="switch" aria-label="Original image colors" aria-checked={sourceColor} onClick={() => setSourceColor(!sourceColor)}><span /></button></div>
               <div className="toggle-row"><span>Grain texture <Info size={12}><title>A subtle film-like texture</title></Info></span><button className="toggle" role="switch" aria-label="Grain texture" aria-checked={grain} onClick={() => setGrain(!grain)}><span /></button></div>
             </div>
-            <div className="settings-section motion-section"><div className="section-label"><span>03</span> MOTION</div><div className="range-label"><label htmlFor="duration">{sourceInfo?.animated ? 'Source timing preserved' : 'Morph duration'}</label><output>{sourceInfo?.animated ? `${(sourceInfo.duration / 1000).toFixed(1)}s` : `${(duration / 1000).toFixed(1)}s`}</output></div><input id="duration" disabled={sourceInfo?.animated} type="range" min="600" max="3600" step="100" value={duration} onChange={e => setDuration(+e.target.value)} style={{ '--range': `${(duration - 600) / 30}%` } as React.CSSProperties} /><div className="range-label second-range"><label htmlFor="motion">Wander</label><output>{motion}%</output></div><input id="motion" type="range" min="0" max="100" value={motion} onChange={e => setMotion(+e.target.value)} style={{ '--range': `${motion}%` } as React.CSSProperties} /><div className="toggle-row cycle-row"><span>Cycle through shapes</span><button className="toggle" role="switch" aria-label="Cycle through shapes" aria-checked={loop} onClick={() => setLoop(!loop)}><span /></button></div></div>
+            <div className="settings-section motion-section"><div className="section-label"><span>03</span> MOTION</div><div className="range-label"><label htmlFor="duration">{sourceInfo?.animated ? 'Source timing preserved' : 'Morph duration'}</label><output>{sourceInfo?.animated ? `${(sourceInfo.duration / 1000).toFixed(1)}s` : `${(duration / 1000).toFixed(1)}s`}</output></div><input id="duration" disabled={sourceInfo?.animated} type="range" min="600" max="3600" step="100" value={duration} onChange={e => setDuration(+e.target.value)} style={{ '--range': `${(duration - 600) / 30}%` } as React.CSSProperties} /><div className="range-label second-range"><label htmlFor="motion">Wander</label><output>{motion}%</output></div><input id="motion" type="range" min="0" max="100" value={motion} onChange={e => setMotion(+e.target.value)} style={{ '--range': `${motion}%` } as React.CSSProperties} /><div className="range-label second-range"><label htmlFor="time-steps">Time steps / loop</label><output htmlFor="time-steps">{maxTimeSteps}</output></div><input id="time-steps" type="range" min="4" max={MAX_TIME_STEPS} step="4" value={maxTimeSteps} aria-describedby="time-steps-help" onChange={e => setMaxTimeSteps(+e.target.value)} style={{ '--range': `${(maxTimeSteps - 4) / (MAX_TIME_STEPS - 4) * 100}%` } as React.CSSProperties} /><p id="time-steps-help" className="time-steps-help">More samples, more varied timing. Characters still change slowly.</p><div className="toggle-row cycle-row"><span>Cycle through shapes</span><button className="toggle" role="switch" aria-label="Cycle through shapes" aria-checked={loop} onClick={() => setLoop(!loop)}><span /></button></div></div>
             <div className="export-actions"><button className="primary-button" disabled={!sourceInfo || loadProgress !== null} onClick={() => { setLoop(false); setExportOpen(true); }}><ArrowDownToLine size={16} /> Export animation <span>GIF / WEBP / SVG</span></button><button className="primary-button" onClick={() => art.current?.exportPng()}><ArrowDownToLine size={16} /> Save current frame <span>PNG</span></button><button className="code-button" onClick={() => setModal('code')}><Code2 size={15} /> Get the component</button></div>
           </aside>
         </section>

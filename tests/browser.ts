@@ -4,6 +4,8 @@ import { frameAtTime, samplePixels } from '../src/lib/animation';
 import { exportAnimation } from '../src/lib/export';
 import { parseWebP, chunks, chunk, concat, riff, vp8x, write24 } from '../src/lib/webp';
 import { sanitizeSvg } from '../src/lib/svg-input';
+import { DEFAULT_MAX_TIME_STEPS, normalizeTimeSteps, sampleGlyphLoop, sinRandom } from '../src/lib/loop-noise';
+import { glyphs } from '../src/lib/render';
 const results = document.querySelector('#results')!;
 let failures = 0, total = 0;
 async function test(name: string, run: () => Promise<void> | void) {
@@ -22,6 +24,116 @@ function makeGif() {
 }
 const style = { characters: '<>&"@', density: 16, colorMode: 'source' as const, palette: 'paper' as const, motion: 0, grain: false };
 const options = { width: 240, height: 230, duration: 1000, fps: 10, loop: true };
+await test('Seeded character noise repeats for arbitrary durations and random access', () => {
+  for (const duration of [170, 500, 1375, 4000, 30000]) {
+    for (let cell = 0; cell < 100; cell++) {
+      const x = cell * 6.12, y = cell % 13 * 9;
+      const time = duration * .37;
+      const first = sampleGlyphLoop(time, x, y, duration, 42);
+      sampleGlyphLoop(time * 2, x, y, duration, 99);
+      assert(JSON.stringify(first) === JSON.stringify(sampleGlyphLoop(time, x, y, duration, 42)), 'Rendering order changed the result');
+      for (const offset of [-2, 1, 17]) {
+        const repeated = sampleGlyphLoop(time + offset * duration, x, y, duration, 42);
+        for (const key of ['character', 'dx', 'dy', 'alpha'] as const) assert(Math.abs(first[key] - repeated[key]) < 1e-10, `${key} did not repeat`);
+      }
+      assert(first.character >= 0 && first.character <= 1, 'Noise outside character range');
+      assert(first.character !== sampleGlyphLoop(time, x, y, duration, 43).character, 'Seed has no effect');
+    }
+  }
+});
+await test('Noise and wobble have continuous values and velocity across the loop seam', () => {
+  for (const duration of [500, 1375, 4000, 30000]) {
+    const epsilon = duration * 1e-6;
+    for (let cell = 0; cell < 100; cell++) {
+      const at = (t: number) => sampleGlyphLoop(t, cell * 6.12, cell % 13 * 9, duration);
+      const before = at(duration - epsilon), seam = at(0), after = at(epsilon);
+      assert(JSON.stringify(at(duration)) === JSON.stringify(seam), 'Endpoint mismatch');
+      for (const key of ['dx', 'dy'] as const) {
+        assert(Math.abs(before[key] - after[key]) < .0001, `${key} jumps at the seam`);
+        assert(Math.abs((seam[key] - before[key]) - (after[key] - seam[key])) < 1e-8, `${key} velocity jumps at the seam`);
+      }
+      const noise = (t: number) => sinRandom(t, cell * 6.12, cell % 13 * 9, duration);
+      assert(Math.abs(noise(duration - epsilon) - noise(epsilon)) < .0001, 'Sine noise jumps at the seam');
+    }
+  }
+});
+await test('Characters change discretely without a collective reset at the seam', () => {
+  const points = Array.from({ length: 500 }, (_, i) => ({ x: i % 25 * 6.12, y: Math.floor(i / 25) * 9, color: '#fff', brightness: 1 }));
+  const duration = 4000, frames = 60;
+  const states = Array.from({ length: frames }, (_, i) => glyphs(points, { ...style, motion: 35 }, i * duration / frames, duration));
+  const changes = states.map((state, i) => state.filter((p, j) => p.char !== states[(i + 1) % frames][j].char).length);
+  const average = changes.reduce((a, b) => a + b, 0) / frames;
+  assert(average > 0, 'Characters never change');
+  assert(changes[frames - 1] < average * 1.5, 'Collective character reset at loop seam');
+  assert(states.every(state => state.every(p => Array.from(style.characters).includes(p.char))), 'Invalid character');
+  assert(states.every(state => state.every((p, j) => p.alpha === states[0][j].alpha)), 'Character changes crossfade');
+  const reversed = glyphs([...points].reverse(), style, 1234, duration).reverse();
+  assert(JSON.stringify(reversed) === JSON.stringify(glyphs(points, style, 1234, duration)), 'Cell identity depends on particle order');
+  assert(sinRandom(0, 0, 0, duration) !== sinRandom(0, 6.12, 0, duration), 'Cells share the same phase');
+});
+await test('Character holds stay sparse, varied by cell, and slow even on short loops', () => {
+  for (const duration of [500, 1375, 4000, 10000, 30000]) {
+    let total = 0, still = 0, lively = 0;
+    for (let cell = 0; cell < 1000; cell++) {
+      const at = (t: number) => Math.floor(sampleGlyphLoop(t, cell % 40 * 6.12, Math.floor(cell / 40) * 9, duration).character * 10);
+      let previous = at(0), changes = 0;
+      const changeTimes: number[] = [];
+      for (let t = 100; t < duration; t += 100) {
+        const current = at(t);
+        if (current !== previous) { changes++; changeTimes.push(t); }
+        previous = current;
+      }
+      if (previous !== at(0)) { changes++; changeTimes.push(duration); }
+      for (let i = 0; i < changeTimes.length; i++) {
+        const next = i + 1 < changeTimes.length ? changeTimes[i + 1] : changeTimes[0] + duration;
+        assert(next - changeTimes[i] >= 700, 'Rapid character flicker, including across the seam');
+      }
+      total += changes; still += Number(changes === 0); lively += Number(changes >= 3);
+      assert(at(1234) === at(1234 + 10 * duration), 'Hold schedule does not repeat');
+    }
+    const rate = total / 1000 / (duration / 1000);
+    if (duration < 1600) assert(total === 0, 'Short loop forces fast character changes');
+    else assert(rate > .14 && rate < .27, `Character rhythm drifted from the original rate: ${rate}/s`);
+    if (duration === 4000) {
+      assert(still > 450 && still < 750, 'Too few quiet cells or too little activity');
+      assert(lively > 0, 'No variation between slow and lively cells');
+    }
+  }
+});
+await test('Time steps add timing choices without multiplying the change rate or breaking holds', () => {
+  const rates: number[] = [];
+  const patterns: string[] = [];
+  const timingChoices: number[] = [];
+  for (const steps of [4, 64, 512]) {
+    const duration = 10000, gaps = new Set<number>();
+    let changes = 0;
+    const pattern: number[] = [];
+    for (let cell = 0; cell < 300; cell++) {
+      const at = (t: number) => sampleGlyphLoop(t, cell % 30 * 6.12, Math.floor(cell / 30) * 9, duration, 23, steps).character;
+      let previous = at(0);
+      const times: number[] = [];
+      for (let time = 20; time <= duration; time += 20) {
+        const value = at(time);
+        if (value !== previous) { times.push(time); changes++; }
+        previous = value;
+      }
+      times.forEach((time, i) => {
+        const gap = (times[i + 1] ?? times[0] + duration) - time;
+        assert(gap >= 780, 'Increasing time steps caused rapid flicker at a boundary');
+        gaps.add(gap);
+      });
+      assert(at(1371) === at(1371 + 3 * duration), 'Configured time-step schedule failed to loop');
+      pattern.push(at(1371));
+    }
+    rates.push(changes / 300 / (duration / 1000));
+    patterns.push(pattern.join(',')); timingChoices.push(gaps.size);
+  }
+  assert(Math.max(...rates) / Math.min(...rates) < 1.25, 'Sampling resolution multiplied the change rate');
+  assert(new Set(patterns).size === 3, 'Time-step control does not affect the random schedule');
+  assert(timingChoices[2] > timingChoices[0] * 3, 'Higher step count did not offer finer timing');
+  assert(normalizeTimeSteps(NaN) === DEFAULT_MAX_TIME_STEPS && normalizeTimeSteps(Infinity) === DEFAULT_MAX_TIME_STEPS, 'Invalid sample count has no safe default');
+  assert(normalizeTimeSteps(0) === 1 && normalizeTimeSteps(1000000) === 512 && normalizeTimeSteps(12.6) === 13, 'Sample count is unbounded or fractional');
+});
 const gifBlob = makeGif();
 let source = await loadMedia(gifBlob);
 function preview(blob: Blob, name: string) {
@@ -60,6 +172,28 @@ await test('Animated SVG export contains escaped vector text and exact timeline'
   assert(doc.querySelectorAll('animate').length === 3 && doc.querySelectorAll('text').length > 10, 'Missing vector frames');
   assert(doc.querySelector('animate')?.getAttribute('dur') === '0.5s', 'SVG duration changed');
   preview(blob, 'test-ascii.svg');
+});
+await test('Export samples the shared loop at cumulative source delays, without duplicating the endpoint', async () => {
+  for (const input of [source, { ...source, animated: false, frames: [source.frames[0]] }]) {
+    const exportOptions = { ...options, duration: 4000 };
+    const duration = input.animated ? input.duration : exportOptions.duration;
+    const exportStyle = { ...style, motion: 35, animationSeed: 42, maxTimeSteps: 128 };
+    const blob = await exportAnimation(input, exportStyle, 'svg', exportOptions);
+    const doc = new DOMParser().parseFromString(await blob.text(), 'image/svg+xml');
+    const groups = [...doc.querySelectorAll('g')];
+    assert(groups.length === (input.animated ? 3 : 40), 'Extra endpoint or missing frames');
+    let time = 0;
+    groups.forEach((group, i) => {
+      const frame = input.frames[input.animated ? i : 0];
+      const expected = glyphs(samplePixels(frame.pixels, style.density), exportStyle, time, duration);
+      const actual = [...group.querySelectorAll('text')];
+      assert(actual.length === expected.length, 'Missing cells');
+      actual.forEach((node, j) => {
+        assert(node.textContent === expected[j].char && node.getAttribute('x') === expected[j].x.toFixed(2) && node.getAttribute('y') === expected[j].y.toFixed(2), 'Export differs from shared renderer timing');
+      });
+      time += input.animated ? frame.delay : 1000 / options.fps;
+    });
+  }
 });
 await test('SMIL SVG input samples changing geometry', async () => {
   const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100" viewBox="0 0 200 100"><rect x="10" y="20" width="30" height="30" fill="red"><animate attributeName="x" values="10;150;10" dur="1s" repeatCount="indefinite"/></rect></svg>';

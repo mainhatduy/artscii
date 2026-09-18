@@ -1,6 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import { frameAtTime, samplePixels, type AnimationSource, type Point } from '../lib/animation';
 import { loadMedia } from '../lib/media';
+import { DEFAULT_LOOP_DURATION, sampleGlyphLoop } from '../lib/loop-noise';
 import { drawBackground, drawGlyphs, getContrastingInk, themes, type ArtStyle, type BgMode, type Palette } from '../lib/render';
 import { exportAnimation, type ExportFormat, type ExportOptions } from '../lib/export';
 
@@ -24,12 +25,14 @@ export type AsciiMorphProps = {
   inkColor?: string;
   playing?: boolean;
   motion?: number;
+  animationSeed?: number;
+  maxTimeSteps?: number;
   grain?: boolean;
   onCount?: (count: number) => void;
   onError?: (message: string) => void;
   className?: string;
 };
-type Particle = Point & { tx: number; ty: number; seed: number; alpha: number; targetAlpha: number; char: number };
+type Particle = Point & { tx: number; ty: number; alpha: number; targetAlpha: number };
 
 export async function sampleImage(src: string, gap: number): Promise<Point[]> {
   const response = await fetch(src);
@@ -49,6 +52,8 @@ function artStyle(props: AsciiMorphProps): ArtStyle {
     colorMode: props.colorMode ?? 'mono',
     motion: props.motion ?? 35,
     grain: props.grain ?? true,
+    animationSeed: props.animationSeed,
+    maxTimeSteps: props.maxTimeSteps,
   };
 }
 
@@ -103,7 +108,7 @@ export const AsciiMorph = forwardRef<AsciiMorphHandle, AsciiMorphProps>(function
       const pool = particles.current;
       points.forEach((point, i) => {
         if (pool[i]) Object.assign(pool[i], { tx: point.x, ty: point.y, color: point.color, brightness: point.brightness, targetAlpha: 1 });
-        else pool.push({ ...point, x: reducedMotion.current ? point.x : 250 + (Math.random() - .5) * 800, y: reducedMotion.current ? point.y : Math.random() * 560, tx: point.x, ty: point.y, seed: Math.random() * 100, alpha: 0, targetAlpha: 1, char: Math.random() });
+        else pool.push({ ...point, x: reducedMotion.current ? point.x : 250 + (Math.random() - .5) * 800, y: reducedMotion.current ? point.y : Math.random() * 560, tx: point.x, ty: point.y, alpha: 0, targetAlpha: 1 });
       });
       for (let i = points.length; i < pool.length; i++) pool[i].targetAlpha = 0;
       if (config.current.playing === false || reducedMotion.current) pool.forEach(p => { p.x = p.tx; p.y = p.ty; p.alpha = p.targetAlpha; });
@@ -117,7 +122,7 @@ export const AsciiMorph = forwardRef<AsciiMorphHandle, AsciiMorphProps>(function
     const ctx = canvas.getContext('2d')!;
     const background = document.createElement('canvas');
     let backgroundKey = '';
-    let frame = 0, last = 0, elapsed = 0;
+    let frame = 0, last = 0;
     const pointer = { x: -999, y: -999 };
     function render(dt = 0) {
       const p = config.current;
@@ -149,7 +154,7 @@ export const AsciiMorph = forwardRef<AsciiMorphHandle, AsciiMorphProps>(function
           config.current.onCount?.(points.length);
         }
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        drawGlyphs(ctx, frameCache.current.points, { ...artStyle(p), motion: reducedMotion.current ? 0 : p.motion ?? 35 }, sourceTime.current, w, h);
+        drawGlyphs(ctx, frameCache.current.points, { ...artStyle(p), motion: reducedMotion.current ? 0 : p.motion ?? 35 }, sourceTime.current, w, h, source.duration);
         return;
       }
       const scale = Math.min(w / 650, h / 620);
@@ -170,20 +175,20 @@ export const AsciiMorph = forwardRef<AsciiMorphHandle, AsciiMorphProps>(function
           particle.x += (particle.tx - particle.x) * easing;
           particle.y += (particle.ty - particle.y) * easing;
           particle.alpha += (particle.targetAlpha - particle.alpha) * easing;
-          if (Math.random() < dt * .00022) particle.char = Math.random();
         }
         if (particle.alpha < .005) continue;
+        const state = sampleGlyphLoop(sourceTime.current, particle.tx, particle.ty, DEFAULT_LOOP_DURATION, p.animationSeed, p.maxTimeSteps);
         const wobble = reducedMotion.current ? 0 : (p.motion ?? 35) / 22;
-        let x = particle.x + Math.sin(elapsed * .0016 + particle.seed) * wobble;
-        let y = particle.y + Math.cos(elapsed * .0012 + particle.seed) * wobble;
+        let x = particle.x + state.dx * wobble;
+        let y = particle.y + state.dy * wobble;
         const dx = x - pointer.x, dy = y - pointer.y, dist = Math.hypot(dx, dy);
         if (dist < 65 && dist > 0 && p.playing !== false && !reducedMotion.current) {
           x += dx / dist * (65 - dist) * .6;
           y += dy / dist * (65 - dist) * .6;
         }
-        ctx.globalAlpha = particle.alpha * (.68 + (Math.sin(particle.seed) + 1) * .16);
+        ctx.globalAlpha = particle.alpha * state.alpha;
         ctx.fillStyle = p.colorMode === 'source' ? particle.color : defaultInk;
-        ctx.fillText(chars[Math.min(chars.length - 1, Math.floor(particle.char * chars.length))], x, y);
+        ctx.fillText(chars[Math.min(chars.length - 1, Math.floor(state.character * chars.length))], x, y);
       }
       ctx.globalAlpha = 1;
     }
@@ -196,7 +201,7 @@ export const AsciiMorph = forwardRef<AsciiMorphHandle, AsciiMorphProps>(function
     resize.observe(canvas);
     function tick(now: number) {
       const delta = now - (last || now); const dt = Math.min(delta, 40); last = now;
-      if (config.current.playing !== false && !reducedMotion.current && !document.hidden) { elapsed += dt; sourceTime.current += delta; render(dt); }
+      if (config.current.playing !== false && !reducedMotion.current && !document.hidden) { sourceTime.current += delta; render(dt); }
       frame = requestAnimationFrame(tick);
     }
     function move(e: PointerEvent) {
@@ -216,6 +221,8 @@ export const AsciiMorph = forwardRef<AsciiMorphHandle, AsciiMorphProps>(function
     props.characters,
     props.colorMode,
     props.motion,
+    props.animationSeed,
+    props.maxTimeSteps,
     props.grain,
     props.playing,
   ]);

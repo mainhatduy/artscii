@@ -56,12 +56,13 @@ export async function exportAnimation(source: AnimationSource, style: ArtStyle, 
       svg.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="Animated ASCII artwork"><title>ArtSCII animation</title>${bgSvg}`);
     }
     const delays = frames.map(f => f.delay);
+    const duration = delays.reduce((sum, delay) => sum + delay, 0);
     for (let i = 0; i < frames.length; i++) {
       abortIfNeeded(signal);
       const f = frames[i], points = samplePixels(f.pixels, style.density);
       if (format === 'svg') {
         const scale = Math.min(width / 650, height / 620);
-        const text = glyphs(points, style, time).map(p => `<text x="${p.x.toFixed(2)}" y="${p.y.toFixed(2)}" fill="${p.color}" opacity="${p.alpha.toFixed(2)}">${escapeXml(p.char)}</text>`).join('');
+        const text = glyphs(points, style, time, duration).map(p => `<text x="${p.x.toFixed(2)}" y="${p.y.toFixed(2)}" fill="${p.color}" opacity="${p.alpha.toFixed(2)}">${escapeXml(p.char)}</text>`).join('');
         const group = `<g visibility="${i === 0 ? 'visible' : 'hidden'}" transform="translate(${width / 2 - 250 * scale} ${height / 2 - 280 * scale}) scale(${scale})" font-family="Courier New,monospace" font-size="${style.density * .94}" text-anchor="middle" dominant-baseline="central">${svgVisibility(i, delays, options.loop)}${text}</g>`;
         byteCount += group.length; if (byteCount > 40_000_000) throw new Error('SVG is too detailed. Lower density or use GIF/WebP for a smaller file.');
         svg.push(group);
@@ -70,7 +71,7 @@ export async function exportAnimation(source: AnimationSource, style: ArtStyle, 
         if (style.bgMode !== 'transparent') {
           ctx.drawImage(background, 0, 0);
         }
-        drawGlyphs(ctx, points, style, time, width, height);
+        drawGlyphs(ctx, points, style, time, width, height, duration);
         // Quantize cumulative timing so GIF centisecond rounding does not accumulate drift.
         const gifDelay = Math.max(10, (Math.round((time + f.delay) / 10) - Math.round(time / 10)) * 10);
         if (format === 'gif') {

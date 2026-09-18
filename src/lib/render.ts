@@ -1,4 +1,5 @@
 import type { Point } from './animation';
+import { DEFAULT_LOOP_DURATION, sampleGlyphLoop } from './loop-noise';
 
 export type Palette = 'lagoon' | 'paper' | 'midnight' | 'rose' | 'amber' | 'emerald';
 export type BgMode = 'theme' | 'color' | 'transparent';
@@ -13,6 +14,8 @@ export type ArtStyle = {
   inkColor?: string;
   motion: number;
   grain: boolean;
+  animationSeed?: number;
+  maxTimeSteps?: number;
 };
 
 export const themes: Record<Palette, { bg: string; glow: string; glow2: string; ink: string }> = {
@@ -88,7 +91,7 @@ export function drawBackground(
   if (grain) drawGrain(ctx, w, h);
 }
 
-export function glyphs(points: Point[], style: ArtStyle, time: number) {
+export function glyphs(points: Point[], style: ArtStyle, time: number, duration = DEFAULT_LOOP_DURATION) {
   const chars = Array.from(style.characters.trim() || '@#$%&*+=:-.');
   let defaultInk: string;
   if (style.inkColor) {
@@ -102,23 +105,19 @@ export function glyphs(points: Point[], style: ArtStyle, time: number) {
   }
 
   return points.map(p => {
-    const seed = (Math.floor(p.x * 7) * 31 + Math.floor(p.y * 7) * 17) % 997;
-    const phase = time * .0015 + seed;
-    const interval = 3500 + (seed * 19) % 2000;
-    const offset = (seed * 151) % interval;
-    const step = Math.floor((time + offset) / interval);
-    const charIndex = (((seed * 31337) ^ (step * 15485863)) >>> 0) % chars.length;
+    const state = sampleGlyphLoop(time, p.x, p.y, duration, style.animationSeed, style.maxTimeSteps);
+    const charIndex = Math.min(chars.length - 1, Math.floor(state.character * chars.length));
     return {
-      x: p.x + Math.sin(phase) * style.motion / 22,
-      y: p.y + Math.cos(phase) * style.motion / 22,
+      x: p.x + state.dx * style.motion / 22,
+      y: p.y + state.dy * style.motion / 22,
       char: chars[charIndex],
-      alpha: .68 + (Math.sin(seed) + 1) * .16,
+      alpha: state.alpha,
       color: style.colorMode === 'source' ? p.color : defaultInk,
     };
   });
 }
 
-export function drawGlyphs(ctx: CanvasRenderingContext2D, points: Point[], style: ArtStyle, time: number, w: number, h: number) {
+export function drawGlyphs(ctx: CanvasRenderingContext2D, points: Point[], style: ArtStyle, time: number, w: number, h: number, duration = DEFAULT_LOOP_DURATION) {
   const scale = Math.min(w / 650, h / 620);
   ctx.save();
   ctx.translate(w / 2 - 250 * scale, h / 2 - 280 * scale);
@@ -126,7 +125,7 @@ export function drawGlyphs(ctx: CanvasRenderingContext2D, points: Point[], style
   ctx.font = `${style.density * .94}px 'Courier New', monospace`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  for (const p of glyphs(points, style, time)) {
+  for (const p of glyphs(points, style, time, duration)) {
     ctx.globalAlpha = p.alpha;
     ctx.fillStyle = p.color;
     ctx.fillText(p.char, p.x, p.y);

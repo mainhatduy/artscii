@@ -60,3 +60,5 @@ button:disabled{opacity:.45;cursor:not-allowed}input:disabled{opacity:.4;cursor:
 .transparent-chip{width:16px;height:16px;border-radius:3px;border:1px solid #b8c4aa;flex-shrink:0;background-image:linear-gradient(45deg,#cbd3c2 25%,transparent 25%),linear-gradient(-45deg,#cbd3c2 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#cbd3c2 75%),linear-gradient(-45deg,transparent 75%,#cbd3c2 75%);background-size:8px 8px;background-position:0 0,0 4px,4px -4px,-4px 0}
 .art-stage.stage-transparent{background-color:#1c242b;background-image:linear-gradient(45deg,#24303a 25%,transparent 25%),linear-gradient(-45deg,#24303a 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#24303a 75%),linear-gradient(-45deg,transparent 75%,#24303a 75%);background-size:20px 20px;background-position:0 0,0 10px,10px -10px,-10px 0}
 
+
+.time-steps-help{font-size:9px;line-height:1.5;color:#7c8377;margin:10px 0 0}

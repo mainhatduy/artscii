@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowDownToLine, X } from 'lucide-react';
 import type { AnimationSource } from '../lib/animation';
+import { DEFAULT_LOOP_DURATION } from '../lib/loop-noise';
 import { downloadBlob, type ExportFormat } from '../lib/export';
 import type { AsciiMorphHandle } from './AsciiMorph';
 
@@ -8,7 +9,7 @@ type Props = { art: AsciiMorphHandle; source: AnimationSource; onClose: () => vo
 export function ExportDialog({ art, source, onClose, onMessage }: Props) {
   const [format, setFormat] = useState<ExportFormat>('gif');
   const [width, setWidth] = useState(640);
-  const [duration, setDuration] = useState(4);
+  const [duration, setDuration] = useState(DEFAULT_LOOP_DURATION / 1000);
   const [fps, setFps] = useState(15);
   const [loop, setLoop] = useState(true);
   const [progress, setProgress] = useState<number | null>(null);
