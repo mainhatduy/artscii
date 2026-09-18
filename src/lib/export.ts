@@ -1,5 +1,5 @@
 import { abortIfNeeded, samplePixels, yieldTask, type AnimationSource } from './animation';
-import { drawBackground, drawGlyphs, glyphs, type ArtStyle } from './render';
+import { DEFAULT_FONT_FAMILY, drawBackground, drawGlyphs, glyphs, type ArtStyle } from './render';
 import { encodeAnimatedWebP } from './webp';
 export type ExportFormat = 'gif' | 'webp' | 'svg';
 export type ExportOptions = { width: number; height: number; duration: number; fps: number; loop: boolean; signal?: AbortSignal; onProgress?: (value: number) => void };
@@ -63,7 +63,7 @@ export async function exportAnimation(source: AnimationSource, style: ArtStyle, 
       if (format === 'svg') {
         const scale = Math.min(width / 650, height / 620);
         const text = glyphs(points, style, time, duration).map(p => `<text x="${p.x.toFixed(2)}" y="${p.y.toFixed(2)}" fill="${p.color}" opacity="${p.alpha.toFixed(2)}">${escapeXml(p.char)}</text>`).join('');
-        const group = `<g visibility="${i === 0 ? 'visible' : 'hidden'}" transform="translate(${width / 2 - 250 * scale} ${height / 2 - 280 * scale}) scale(${scale})" font-family="Courier New,monospace" font-size="${style.density * .94}" text-anchor="middle" dominant-baseline="central">${svgVisibility(i, delays, options.loop)}${text}</g>`;
+        const group = `<g visibility="${i === 0 ? 'visible' : 'hidden'}" transform="translate(${width / 2 - 250 * scale} ${height / 2 - 280 * scale}) scale(${scale})" font-family="${escapeXml(style.fontFamily ?? DEFAULT_FONT_FAMILY)}" font-size="${style.density * .94}" text-anchor="middle" dominant-baseline="central">${svgVisibility(i, delays, options.loop)}${text}</g>`;
         byteCount += group.length; if (byteCount > 40_000_000) throw new Error('SVG is too detailed. Lower density or use GIF/WebP for a smaller file.');
         svg.push(group);
       } else {

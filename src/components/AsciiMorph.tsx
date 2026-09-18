@@ -2,7 +2,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import { frameAtTime, samplePixels, type AnimationSource, type Point } from '../lib/animation';
 import { loadMedia } from '../lib/media';
 import { DEFAULT_LOOP_DURATION, sampleGlyphLoop } from '../lib/loop-noise';
-import { drawBackground, drawGlyphs, getContrastingInk, themes, type ArtStyle, type BgMode, type Palette } from '../lib/render';
+import { drawBackground, drawGlyphs, getContrastingInk, glyphFont, themes, type ArtStyle, type BgMode, type Palette } from '../lib/render';
 import { exportAnimation, type ExportFormat, type ExportOptions } from '../lib/export';
 
 export type { Palette, BgMode };
@@ -16,6 +16,7 @@ export type AsciiMorphProps = {
   onSource?: (source: AnimationSource) => void;
   activeIndex?: number;
   characters?: string;
+  fontFamily?: string;
   density?: number;
   morphDuration?: number;
   colorMode?: 'source' | 'mono';
@@ -44,6 +45,7 @@ export async function sampleImage(src: string, gap: number): Promise<Point[]> {
 function artStyle(props: AsciiMorphProps): ArtStyle {
   return {
     characters: props.characters ?? '@#$%&*+=:-.',
+    fontFamily: props.fontFamily,
     density: props.density ?? 9,
     palette: props.palette ?? 'lagoon',
     bgMode: props.bgMode ?? 'theme',
@@ -160,7 +162,7 @@ export const AsciiMorph = forwardRef<AsciiMorphHandle, AsciiMorphProps>(function
       const scale = Math.min(w / 650, h / 620);
       ctx.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * (w / 2 - 250 * scale), dpr * (h / 2 - 280 * scale));
       const chars = Array.from(p.characters?.trim() || '@#$%&*+=:-.');
-      ctx.font = `${(p.density ?? 9) * .94}px 'Courier New', monospace`;
+      ctx.font = glyphFont(p.density ?? 9, p.fontFamily);
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       const easing = 1 - Math.exp(-dt / ((p.morphDuration ?? 1800) / 6));
@@ -219,6 +221,7 @@ export const AsciiMorph = forwardRef<AsciiMorphHandle, AsciiMorphProps>(function
     props.bgColor,
     props.inkColor,
     props.characters,
+    props.fontFamily,
     props.colorMode,
     props.motion,
     props.animationSeed,

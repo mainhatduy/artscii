@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowDownToLine, ArrowLeft, ArrowRight, ArrowUpRight, Check, ChevronDown, Code2, Expand, ImagePlus, Info, Maximize2, Pause, Play, RotateCcw, Shuffle, Sparkles, Upload, X } from 'lucide-react';
 import { AsciiMorph, type AsciiMorphHandle, type BgMode, type Palette, sampleImage } from './components/AsciiMorph';
-import { isLightColor } from './lib/render';
+import { characterFonts, DEFAULT_FONT_FAMILY, isLightColor } from './lib/render';
 import { DEFAULT_MAX_TIME_STEPS, MAX_TIME_STEPS } from './lib/loop-noise';
 import { ExportDialog } from './components/ExportDialog';
 import { UnicodePicker } from './components/UnicodePicker';
@@ -59,6 +59,7 @@ function App() {
   const [bgColor, setBgColor] = useState('#0d1117');
   const [charset, setCharset] = useState('classic');
   const [characters, setCharacters] = useState(sets.classic);
+  const [fontFamily, setFontFamily] = useState(DEFAULT_FONT_FAMILY);
   const [showUnicodePicker, setShowUnicodePicker] = useState(false);
   const [sourceColor, setSourceColor] = useState(false);
   const [count, setCount] = useState(0);
@@ -107,6 +108,7 @@ function App() {
     setGrain(true);
     setCharset('classic');
     setCharacters(sets.classic);
+    setFontFamily(DEFAULT_FONT_FAMILY);
     setShowUnicodePicker(false);
     setSourceColor(false);
     setLoop(false);
@@ -114,7 +116,7 @@ function App() {
     setToast('Back to a fresh canvas.');
   }
 
-  const code = `<AsciiMorph\n  images={${JSON.stringify(uploaded && active === 4 ? ['/your-image.png'] : presets.map(p => p.file), null, 2)}}\n  activeIndex={${active === 4 ? 0 : active}}\n  characters=${JSON.stringify(characters)}\n  density={${density}}\n  morphDuration={${duration}}\n  colorMode="${sourceColor ? 'source' : 'mono'}"\n  palette="${palette}"\n  bgMode="${bgMode}"\n  bgColor="${bgColor}"\n  motion={${motion}}\n  maxTimeSteps={${maxTimeSteps}}\n  grain={${grain}}\n  playing={${playing}}\n/>`;
+  const code = `<AsciiMorph\n  images={${JSON.stringify(uploaded && active === 4 ? ['/your-image.png'] : presets.map(p => p.file), null, 2)}}\n  activeIndex={${active === 4 ? 0 : active}}\n  characters=${JSON.stringify(characters)}\n  fontFamily={${JSON.stringify(fontFamily)}}\n  density={${density}}\n  morphDuration={${duration}}\n  colorMode="${sourceColor ? 'source' : 'mono'}"\n  palette="${palette}"\n  bgMode="${bgMode}"\n  bgColor="${bgColor}"\n  motion={${motion}}\n  maxTimeSteps={${maxTimeSteps}}\n  grain={${grain}}\n  playing={${playing}}\n/>`;
   return (
     <div className="app-shell">
       <header className="site-header">
@@ -130,7 +132,7 @@ function App() {
           <div className="preview-panel">
             <div className="panel-toolbar"><div className="toolbar-title"><span className="live-dot" /> LIVE PREVIEW <span className="toolbar-slash">/</span> <span className="current-name">{selected.name}</span></div><button className="icon-button" title={expanded ? 'Close expanded preview' : 'Expand preview'} aria-label={expanded ? 'Close expanded preview' : 'Expand preview'} onClick={() => setExpanded(!expanded)}>{expanded ? <X size={16} /> : <Expand size={16} />}</button></div>
             <div className={`art-stage ${dragging ? 'dragging' : ''} ${bgMode === 'transparent' ? 'stage-transparent' : ''}`} onDragOver={e => { e.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={e => { e.preventDefault(); setDragging(false); void upload(e.dataTransfer.files[0]); }}>
-              <AsciiMorph ref={art} images={items.map(p => p.file)} activeIndex={active} source={active === 4 ? uploaded?.source : undefined} onSource={setSourceInfo} characters={characters} density={density} morphDuration={duration} colorMode={sourceColor ? 'source' : 'mono'} palette={palette} bgMode={bgMode} bgColor={bgColor} playing={playing} motion={motion} maxTimeSteps={maxTimeSteps} grain={grain} onCount={setCount} onError={setToast} />
+              <AsciiMorph ref={art} images={items.map(p => p.file)} activeIndex={active} source={active === 4 ? uploaded?.source : undefined} onSource={setSourceInfo} characters={characters} fontFamily={fontFamily} density={density} morphDuration={duration} colorMode={sourceColor ? 'source' : 'mono'} palette={palette} bgMode={bgMode} bgColor={bgColor} playing={playing} motion={motion} maxTimeSteps={maxTimeSteps} grain={grain} onCount={setCount} onError={setToast} />
               <div className={`stage-overlay ${isOverlayDark ? 'dark-ink' : ''}`}><div className="stage-top"><span>FORM NO. 0{active + 1}</span><span>ASCII / EXPLORATIONS</span></div><div className="stage-heading">{selected.name}<span>{active === 0 ? 'Built from characters. Made to move.' : 'A familiar form. A different language.'}</span></div><div className="stage-bottom"><span><span className="crosshair">+</span> MOVE YOUR CURSOR. MAKE A LITTLE CHAOS.</span><span>500 × 560</span></div></div>
               {loadProgress !== null && <div className="loading-overlay" role="status"><span>Decoding animation… {loadProgress}%</span><progress max="100" value={loadProgress} /><button onClick={() => uploadTask.current?.abort()}>Cancel</button></div>}
               {dragging && <div className="drop-overlay"><Upload size={30} /> Drop an image to bring it to life</div>}
@@ -139,7 +141,14 @@ function App() {
           </div>
 
           <aside className="settings"><div className="settings-heading"><h2>Make it yours</h2><button className="icon-button" onClick={reset} title="Reset settings" aria-label="Reset settings"><RotateCcw size={15} /></button></div>
-            <div className="settings-section"><div className="section-label"><span>01</span> CHARACTERS</div><label htmlFor="charset">Character set</label><div className="select-wrap"><select id="charset" value={charset} onChange={e => { const val = e.target.value; setCharset(val); if (val !== 'custom') { setCharacters(sets[val as keyof typeof sets]); setShowUnicodePicker(false); } else { setShowUnicodePicker(true); } }}><option value="classic">Classic ASCII</option><option value="minimal">Minimal marks</option><option value="binary">Binary code</option><option value="blocks">Block shades</option><option value="keyboard">All keyboard characters</option><option value="custom">Custom characters</option></select><ChevronDown size={14} /></div><div className="custom-char-row"><input className="characters-input" aria-label="Characters" value={characters} maxLength={150} onChange={e => { setCharacters(e.target.value); setCharset('custom'); }} onBlur={() => { if (!characters.trim()) setCharacters(sets.classic); }} spellCheck={false} /><button type="button" className={`unicode-toggle-btn ${showUnicodePicker ? 'active' : ''}`} onClick={() => { setShowUnicodePicker(prev => !prev); if (charset !== 'custom') setCharset('custom'); }} title={showUnicodePicker ? 'Hide Unicode character palette' : 'Pick Unicode characters'} aria-label="Toggle Unicode character palette" aria-expanded={showUnicodePicker}><Sparkles size={13} /></button></div>{showUnicodePicker && <UnicodePicker characters={characters} onChange={newChars => { setCharacters(newChars); setCharset('custom'); }} maxChars={150} />}
+            <div className="settings-section"><div className="section-label"><span>01</span> CHARACTERS</div><label htmlFor="charset">Character set</label><div className="select-wrap"><select id="charset" value={charset} onChange={e => { const val = e.target.value; setCharset(val); if (val !== 'custom') { setCharacters(sets[val as keyof typeof sets]); setShowUnicodePicker(false); } else { setShowUnicodePicker(true); } }}><option value="classic">Classic ASCII</option><option value="minimal">Minimal marks</option><option value="binary">Binary code</option><option value="blocks">Block shades</option><option value="keyboard">All keyboard characters</option><option value="custom">Custom characters</option></select><ChevronDown size={14} /></div><div className="custom-char-row"><input className="characters-input" style={{ fontFamily }} aria-label="Characters" value={characters} maxLength={150} onChange={e => { setCharacters(e.target.value); setCharset('custom'); }} onBlur={() => { if (!characters.trim()) setCharacters(sets.classic); }} spellCheck={false} /><button type="button" className={`unicode-toggle-btn ${showUnicodePicker ? 'active' : ''}`} onClick={() => { setShowUnicodePicker(prev => !prev); if (charset !== 'custom') setCharset('custom'); }} title={showUnicodePicker ? 'Hide Unicode character palette' : 'Pick Unicode characters'} aria-label="Toggle Unicode character palette" aria-expanded={showUnicodePicker}><Sparkles size={13} /></button></div>{showUnicodePicker && <UnicodePicker characters={characters} fontFamily={fontFamily} onChange={newChars => { setCharacters(newChars); setCharset('custom'); }} maxChars={150} />}
+              <label htmlFor="character-font">Character font</label>
+              <div className="select-wrap character-font-select">
+                <select id="character-font" value={fontFamily} onChange={e => setFontFamily(e.target.value)} style={{ fontFamily }}>
+                  {characterFonts.map(font => <option key={font.family} value={font.family}>{font.label}</option>)}
+                </select>
+                <ChevronDown size={14} />
+              </div>
               <div className="range-label"><label htmlFor="density">Density</label><output>{density <= 7 ? 'Fine' : density <= 11 ? 'Balanced' : 'Coarse'}</output></div><input id="density" type="range" min="5" max="17" value={22 - density} onChange={e => setDensity(22 - +e.target.value)} style={{ '--range': `${(17 - density) / 12 * 100}%` } as React.CSSProperties} /><div className="range-hints"><span>Less</span><span>More</span></div>
             </div>
             <div className="settings-section">

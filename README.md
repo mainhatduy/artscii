@@ -17,7 +17,7 @@ Open the URL printed by Vite. `npm run build` checks TypeScript and creates the 
 
 - Four original SVG silhouettes: runner, knight, portrait, rocket.
 - Upload or drag a PNG, JPEG, GIF, WebP, or SVG (up to 10 MB) onto the preview. Animated GIF/WebP uploads are decoded frame by frame with their timing, compositing, transparency, and disposal. Self-contained animated SVGs support declarative SMIL and CSS animations. Images are processed locally. Transparent silhouettes and white backgrounds work best; this is not automatic subject segmentation.
-- Edit the character set, density, morph duration, wander, time steps per loop, palette, original image colors, and grain.
+- Edit the character set, character font, density, morph duration, wander, time steps per loop, palette, original image colors, and grain.
 - Pause, replay, scatter, cycle shapes, interact with the pointer, or expand the preview.
 - Save the current canvas as PNG, or use **Export animation** for GIF, animated WebP, or animated SVG. Choose output size and looping. The animation export uses the selected source and current style; interface labels, pointer interactions, and the preset shape cycle are not recorded.
 - Reduced-motion preferences disable particle animation. Static shape selection and exports remain available.
@@ -34,6 +34,7 @@ import { AsciiMorph } from './components/AsciiMorph';
     images={['/shapes/runner.svg', '/shapes/knight.svg']}
     activeIndex={0}
     characters="@#$%&*+=:-."
+    fontFamily="'Courier New', monospace"
     density={9}
     morphDuration={1800}
     maxTimeSteps={64}
@@ -52,7 +53,9 @@ import { AsciiMorph } from './components/AsciiMorph';
 
 Change `activeIndex` to morph. `density` is grid spacing (smaller means more characters). `morphDuration` controls the time to settle in milliseconds. The optional ref exposes `scatter()`, `replay()`, `exportPng()`, and `exportAnimation(format, options)`, which returns a Blob. `images` can also contain GIF, animated WebP, and SVG URLs. A decoded `source` prop avoids re-decoding an uploaded file; `onSource` reports its metadata. Remote images require CORS; local assets and uploaded object URLs work directly.
 
-Fonts use Google Fonts with system fallbacks. No image or artwork is sent to a server. Built-in masks are original simplified silhouettes, not extracted artwork from the reference website.
+`fontFamily` accepts a CSS font stack and defaults to `'Courier New', monospace`. The studio offers Courier New, System Mono, Arial, Georgia, and Times New Roman using locally available fonts and fallbacks. The selection applies to the preview and all exports; SVG keeps the font stack as text, so its appearance depends on fonts installed on the viewing device.
+
+Interface fonts use Google Fonts with system fallbacks. No image or artwork is sent to a server. Built-in masks are original simplified silhouettes, not extracted artwork from the reference website.
 
 `maxTimeSteps` sets the number of seeded random sampling opportunities over one full 2π loop (default 64; studio range 4–512). Each cell has its own phase and a sparse change budget based on elapsed seconds. More steps offer finer, more varied change times without multiplying the change rate. Characters switch discretely and hold for at least 800 ms; some cells stay unchanged for an entire loop. Optional `animationSeed` (default 23) reproduces the schedule. Preview and GIF/WebP/SVG exports share these settings. The entire pattern still repeats after one loop; time steps do not change its duration or the export frame rate. Exported motion is sampled at the output frame times, so extra internal steps do not create extra frames.
 

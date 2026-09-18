@@ -4,8 +4,22 @@ import { DEFAULT_LOOP_DURATION, sampleGlyphLoop } from './loop-noise';
 export type Palette = 'lagoon' | 'paper' | 'midnight' | 'rose' | 'amber' | 'emerald';
 export type BgMode = 'theme' | 'color' | 'transparent';
 
+export const DEFAULT_FONT_FAMILY = "'Courier New', monospace";
+export const characterFonts = [
+  { label: 'Courier New', family: DEFAULT_FONT_FAMILY },
+  { label: 'System Mono', family: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' },
+  { label: 'Arial', family: 'Arial, Helvetica, sans-serif' },
+  { label: 'Georgia', family: 'Georgia, serif' },
+  { label: 'Times New Roman', family: "'Times New Roman', Times, serif" },
+];
+
+export function glyphFont(density: number, fontFamily = DEFAULT_FONT_FAMILY) {
+  return `${density * .94}px ${fontFamily}`;
+}
+
 export type ArtStyle = {
   characters: string;
+  fontFamily?: string;
   density: number;
   colorMode: 'source' | 'mono';
   palette: Palette;
@@ -122,7 +136,7 @@ export function drawGlyphs(ctx: CanvasRenderingContext2D, points: Point[], style
   ctx.save();
   ctx.translate(w / 2 - 250 * scale, h / 2 - 280 * scale);
   ctx.scale(scale, scale);
-  ctx.font = `${style.density * .94}px 'Courier New', monospace`;
+  ctx.font = glyphFont(style.density, style.fontFamily);
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   for (const p of glyphs(points, style, time, duration)) {

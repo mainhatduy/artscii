@@ -52,11 +52,12 @@ export const UNICODE_CATEGORIES: UnicodeCategory[] = [
 
 interface UnicodePickerProps {
   characters: string;
+  fontFamily?: string;
   onChange: (characters: string) => void;
   maxChars?: number;
 }
 
-export function UnicodePicker({ characters, onChange, maxChars = 150 }: UnicodePickerProps) {
+export function UnicodePicker({ characters, fontFamily, onChange, maxChars = 150 }: UnicodePickerProps) {
   const [activeCategory, setActiveCategory] = useState<string>(UNICODE_CATEGORIES[0].id);
 
   const currentCategory = UNICODE_CATEGORIES.find(c => c.id === activeCategory) || UNICODE_CATEGORIES[0];
@@ -121,6 +122,7 @@ export function UnicodePicker({ characters, onChange, maxChars = 150 }: UnicodeP
               key={c}
               type="button"
               className={`unicode-char-btn ${isSelected ? 'active' : ''}`}
+              style={{ fontFamily }}
               title={isSelected ? `Remove '${c}'` : `Add '${c}'`}
               aria-pressed={isSelected}
               onClick={() => toggleChar(c)}
