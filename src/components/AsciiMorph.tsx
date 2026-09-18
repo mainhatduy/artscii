@@ -1,9 +1,18 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
+import { frameAtTime, samplePixels, type AnimationSource, type Point } from '../lib/animation';
+import { loadMedia } from '../lib/media';
+import { drawGlyphs, type ArtStyle } from '../lib/render';
+import { exportAnimation, type ExportFormat, type ExportOptions } from '../lib/export';
 
 export type Palette = 'lagoon' | 'paper' | 'midnight' | 'rose';
-export type AsciiMorphHandle = { exportPng: () => void; scatter: () => void; replay: () => void };
+export type AsciiMorphHandle = {
+  exportPng: () => void; scatter: () => void; replay: () => void;
+  exportAnimation: (format: ExportFormat, options: ExportOptions) => Promise<Blob>;
+};
 export type AsciiMorphProps = {
   images: string[];
+  source?: AnimationSource;
+  onSource?: (source: AnimationSource) => void;
   activeIndex?: number;
   characters?: string;
   density?: number;
@@ -17,7 +26,6 @@ export type AsciiMorphProps = {
   onError?: (message: string) => void;
   className?: string;
 };
-type Point = { x: number; y: number; color: string; brightness: number };
 type Particle = Point & { tx: number; ty: number; seed: number; alpha: number; targetAlpha: number; char: number };
 const themes = {
   lagoon: { bg: '#203c44', glow: '#779f9e', glow2: '#345e72', ink: '#effff8' },
@@ -27,41 +35,22 @@ const themes = {
 };
 
 export async function sampleImage(src: string, gap: number): Promise<Point[]> {
-  gap = Math.max(4, Math.min(30, Number.isFinite(gap) ? gap : 9));
-  const img = new Image();
-  img.crossOrigin = 'anonymous';
-  img.src = src;
-  await img.decode();
-  const canvas = document.createElement('canvas');
-  canvas.width = 500; canvas.height = 560;
-  const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
-  const scale = Math.min(460 / img.naturalWidth, 520 / img.naturalHeight);
-  const w = img.naturalWidth * scale, h = img.naturalHeight * scale;
-  ctx.drawImage(img, (500 - w) / 2, (560 - h) / 2, w, h);
-  const { data } = ctx.getImageData(0, 0, 500, 560);
-  let hasTransparency = false;
-  for (let y = Math.ceil((560 - h) / 2) + 1; y < (560 + h) / 2 - 1 && !hasTransparency; y += 3) {
-    for (let x = Math.ceil((500 - w) / 2) + 1; x < (500 + w) / 2 - 1; x += 3) {
-      if (data[(Math.floor(y) * 500 + Math.floor(x)) * 4 + 3] < 80) { hasTransparency = true; break; }
-    }
-  }
-  const points: Point[] = [];
-  for (let y = 0; y < 560; y += gap) {
-    for (let x = 0; x < 500; x += gap * 0.68) {
-      const i = (Math.floor(y) * 500 + Math.floor(x)) * 4;
-      const r = data[i], g = data[i + 1], b = data[i + 2];
-      // Preserve white silhouettes on transparency; remove white opaque backgrounds.
-      if (data[i + 3] < 80 || (!hasTransparency && r > 245 && g > 245 && b > 245)) continue;
-      points.push({ x, y, color: `rgb(${r},${g},${b})`, brightness: (r * .299 + g * .587 + b * .114) / 255 });
-    }
-  }
-  if (!points.length) throw new Error('No visible shape found. Try a darker image or a transparent silhouette.');
-  return points;
+  const response = await fetch(src);
+  if (!response.ok) throw new Error('Could not load image.');
+  const source = await loadMedia(await response.blob());
+  return samplePixels(source.frames[0].pixels, gap);
+}
+
+function artStyle(props: AsciiMorphProps): ArtStyle {
+  return { characters: props.characters ?? '@#$%&*+=:-.', density: props.density ?? 9, palette: props.palette ?? 'lagoon', colorMode: props.colorMode ?? 'mono', motion: props.motion ?? 35, grain: props.grain ?? true };
 }
 
 export const AsciiMorph = forwardRef<AsciiMorphHandle, AsciiMorphProps>(function AsciiMorph(props, ref) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const particles = useRef<Particle[]>([]);
+  const sourceRef = useRef<AnimationSource | null>(null);
+  const sourceTime = useRef(0);
+  const frameCache = useRef<{ index: number; density: number; points: Point[] }>({ index: -1, density: 0, points: [] });
   const config = useRef(props);
   config.current = props;
   const reducedMotion = useRef(window.matchMedia('(prefers-reduced-motion: reduce)').matches);
@@ -74,7 +63,11 @@ export const AsciiMorph = forwardRef<AsciiMorphHandle, AsciiMorphProps>(function
   };
   useImperativeHandle(ref, () => ({
     scatter,
-    replay: scatter,
+    replay: () => { if (sourceRef.current?.animated) { sourceTime.current = 0; drawRef.current(); } else scatter(); },
+    exportAnimation: async (format, options) => {
+      if (!sourceRef.current) throw new Error('Wait for the image to finish loading.');
+      return exportAnimation(sourceRef.current, artStyle(config.current), format, options);
+    },
     exportPng: () => {
       canvasRef.current?.toBlob(blob => {
         if (!blob) { config.current.onError?.('Could not export the canvas. Please try again.'); return; }
@@ -87,10 +80,19 @@ export const AsciiMorph = forwardRef<AsciiMorphHandle, AsciiMorphProps>(function
 
   const src = props.images[props.activeIndex ?? 0];
   useEffect(() => {
-    let cancelled = false;
-    sampleImage(src, props.density ?? 9).then(points => {
-      if (cancelled) return;
-      // Keep existing particles alive when a shape changes. Only their targets change.
+    const controller = new AbortController();
+    sourceRef.current = null;
+    const load = async () => {
+      if (props.source) return props.source;
+      const response = await fetch(src, { signal: controller.signal });
+      if (!response.ok) throw new Error('Could not load this image.');
+      return loadMedia(await response.blob(), { signal: controller.signal });
+    };
+    load().then(source => {
+      if (controller.signal.aborted) return;
+      sourceRef.current = source; sourceTime.current = 0; frameCache.current.index = -1;
+      config.current.onSource?.(source);
+      const points = samplePixels(source.frames[0].pixels, props.density ?? 9);
       const pool = particles.current;
       points.forEach((point, i) => {
         if (pool[i]) Object.assign(pool[i], { tx: point.x, ty: point.y, color: point.color, brightness: point.brightness, targetAlpha: 1 });
@@ -98,11 +100,10 @@ export const AsciiMorph = forwardRef<AsciiMorphHandle, AsciiMorphProps>(function
       });
       for (let i = points.length; i < pool.length; i++) pool[i].targetAlpha = 0;
       if (config.current.playing === false || reducedMotion.current) pool.forEach(p => { p.x = p.tx; p.y = p.ty; p.alpha = p.targetAlpha; });
-      config.current.onCount?.(points.length);
-      drawRef.current();
-    }).catch(() => { if (!cancelled) config.current.onError?.('This image could not be converted. Use a visible PNG, JPG, WebP, or SVG shape.'); });
-    return () => { cancelled = true; };
-  }, [src, props.density]);
+      config.current.onCount?.(points.length); drawRef.current();
+    }).catch(error => { if (!controller.signal.aborted) config.current.onError?.(error instanceof Error ? error.message : 'This image could not be converted.'); });
+    return () => { controller.abort(); };
+  }, [src, props.source, props.density]);
 
   useEffect(() => {
     const canvas = canvasRef.current!;
@@ -141,6 +142,18 @@ export const AsciiMorph = forwardRef<AsciiMorphHandle, AsciiMorphProps>(function
       if (backgroundKey !== key) { drawBackground(palette, p.grain ?? true); backgroundKey = key; }
       ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1;
       ctx.drawImage(background, 0, 0);
+      const source = sourceRef.current;
+      if (source?.animated) {
+        const index = frameAtTime(source.frames.map(f => f.delay), sourceTime.current);
+        if (frameCache.current.index !== index || frameCache.current.density !== (p.density ?? 9)) {
+          const points = samplePixels(source.frames[index].pixels, p.density ?? 9);
+          frameCache.current = { index, density: p.density ?? 9, points };
+          config.current.onCount?.(points.length);
+        }
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        drawGlyphs(ctx, frameCache.current.points, { ...artStyle(p), motion: reducedMotion.current ? 0 : p.motion ?? 35 }, sourceTime.current, w, h);
+        return;
+      }
       const scale = Math.min(w / 650, h / 620);
       ctx.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * (w / 2 - 250 * scale), dpr * (h / 2 - 280 * scale));
       const chars = Array.from(p.characters?.trim() || '@#$%&*+=:-.');
@@ -174,8 +187,8 @@ export const AsciiMorph = forwardRef<AsciiMorphHandle, AsciiMorphProps>(function
     });
     resize.observe(canvas);
     function tick(now: number) {
-      const dt = Math.min(now - (last || now), 40); last = now;
-      if (config.current.playing !== false && !reducedMotion.current && !document.hidden) { elapsed += dt; render(dt); }
+      const delta = now - (last || now); const dt = Math.min(delta, 40); last = now;
+      if (config.current.playing !== false && !reducedMotion.current && !document.hidden) { elapsed += dt; sourceTime.current += delta; render(dt); }
       frame = requestAnimationFrame(tick);
     }
     function move(e: PointerEvent) {
