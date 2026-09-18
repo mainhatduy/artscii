@@ -46,14 +46,16 @@ export function parseWebP(bytes: Uint8Array) {
   });
   return { width: read24(header.data, 4) + 1, height: read24(header.data, 7) + 1, background: `rgba(${anim.data[2]},${anim.data[1]},${anim.data[0]},${anim.data[3] / 255})`, frames };
 }
-export function encodeAnimatedWebP(frames: { bytes: Uint8Array; delay: number }[], width: number, height: number, loop: boolean): Uint8Array {
+export function encodeAnimatedWebP(frames: { bytes: Uint8Array; delay: number }[], width: number, height: number, loop: boolean, hasAlpha = false): Uint8Array {
   const anim = new Uint8Array(6); anim[4] = loop ? 0 : 1;
-  const parts = [vp8x(width, height, 2), chunk('ANIM', anim)];
+  const parts = [vp8x(width, height, hasAlpha ? 18 : 2), chunk('ANIM', anim)];
   for (const frame of frames) {
-    const header = new Uint8Array(16); write24(header, 6, width - 1); write24(header, 9, height - 1); write24(header, 12, Math.round(frame.delay)); header[15] = 2;
+    const header = new Uint8Array(16); write24(header, 6, width - 1); write24(header, 9, height - 1); write24(header, 12, Math.round(frame.delay));
+    header[15] = hasAlpha ? 0 : 2;
     const imageChunks = chunks(frame.bytes).filter(c => ['VP8 ', 'VP8L', 'ALPH'].includes(c.type));
     if (!imageChunks.some(c => c.type === 'VP8 ' || c.type === 'VP8L')) throw new Error('WebP encoding is unavailable in this browser. Choose GIF or SVG.');
     parts.push(chunk('ANMF', concat([header, ...imageChunks.map(c => chunk(c.type, c.data))])));
   }
   return riff(parts);
 }
+

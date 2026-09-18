@@ -28,7 +28,7 @@ export async function exportAnimation(source: AnimationSource, style: ArtStyle, 
   const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height;
   const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
   const background = document.createElement('canvas'); background.width = width; background.height = height;
-  drawBackground(background.getContext('2d')!, width, height, style.palette, style.grain);
+  drawBackground(background.getContext('2d')!, width, height, style.palette, style.grain, style.bgMode ?? 'theme', style.bgColor ?? '#0d1117');
   let worker: Worker | undefined;
   const workerRequest = (message: unknown, transfer: Transferable[] = []) => new Promise<Uint8Array | void>((resolve, reject) => {
     const abort = () => { cleanup(); reject(new DOMException('Cancelled', 'AbortError')); };
@@ -44,7 +44,17 @@ export async function exportAnimation(source: AnimationSource, style: ArtStyle, 
   try {
     abortIfNeeded(signal);
     if (format === 'gif') worker = new Worker(new URL('./gif-worker.ts', import.meta.url), { type: 'module' });
-    if (format === 'svg') svg.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="Animated ASCII artwork"><title>ArtSCII animation</title><image width="${width}" height="${height}" href="${background.toDataURL('image/png')}"/>`);
+    if (format === 'svg') {
+      let bgSvg = '';
+      if (style.bgMode !== 'transparent') {
+        if (style.bgMode === 'color' && !style.grain) {
+          bgSvg = `<rect width="${width}" height="${height}" fill="${style.bgColor || '#0d1117'}"/>`;
+        } else {
+          bgSvg = `<image width="${width}" height="${height}" href="${background.toDataURL('image/png')}"/>`;
+        }
+      }
+      svg.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="Animated ASCII artwork"><title>ArtSCII animation</title>${bgSvg}`);
+    }
     const delays = frames.map(f => f.delay);
     for (let i = 0; i < frames.length; i++) {
       abortIfNeeded(signal);
@@ -56,12 +66,16 @@ export async function exportAnimation(source: AnimationSource, style: ArtStyle, 
         byteCount += group.length; if (byteCount > 40_000_000) throw new Error('SVG is too detailed. Lower density or use GIF/WebP for a smaller file.');
         svg.push(group);
       } else {
-        ctx.clearRect(0, 0, width, height); ctx.drawImage(background, 0, 0); drawGlyphs(ctx, points, style, time, width, height);
+        ctx.clearRect(0, 0, width, height);
+        if (style.bgMode !== 'transparent') {
+          ctx.drawImage(background, 0, 0);
+        }
+        drawGlyphs(ctx, points, style, time, width, height);
         // Quantize cumulative timing so GIF centisecond rounding does not accumulate drift.
         const gifDelay = Math.max(10, (Math.round((time + f.delay) / 10) - Math.round(time / 10)) * 10);
         if (format === 'gif') {
           const pixels = ctx.getImageData(0, 0, width, height).data.buffer;
-          await workerRequest({ kind: 'frame', pixels, width, height, delay: gifDelay, loop: options.loop }, [pixels]);
+          await workerRequest({ kind: 'frame', pixels, width, height, delay: gifDelay, loop: options.loop, transparent: style.bgMode === 'transparent' }, [pixels]);
         } else {
           const blob = await canvasBlob(canvas, 'image/webp');
           const bytes = new Uint8Array(await blob.arrayBuffer()); webp.push({ bytes, delay: Math.round(time + f.delay) - Math.round(time) });
@@ -72,7 +86,7 @@ export async function exportAnimation(source: AnimationSource, style: ArtStyle, 
     }
     abortIfNeeded(signal);
     if (format === 'gif') { const bytes = await workerRequest({ kind: 'finish' }) as Uint8Array; return new Blob([new Uint8Array(bytes)], { type: 'image/gif' }); }
-    if (format === 'webp') return new Blob([new Uint8Array(encodeAnimatedWebP(webp, width, height, options.loop))], { type: 'image/webp' });
+    if (format === 'webp') return new Blob([new Uint8Array(encodeAnimatedWebP(webp, width, height, options.loop, style.bgMode === 'transparent'))], { type: 'image/webp' });
     svg.push('</svg>'); return new Blob(svg, { type: 'image/svg+xml' });
   } finally { worker?.terminate(); }
 }

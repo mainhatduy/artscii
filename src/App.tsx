@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowDownToLine, ArrowLeft, ArrowRight, ArrowUpRight, Check, ChevronDown, Code2, Expand, ImagePlus, Info, Maximize2, Pause, Play, RotateCcw, Shuffle, Sparkles, Upload, X } from 'lucide-react';
-import { AsciiMorph, type AsciiMorphHandle, type Palette, sampleImage } from './components/AsciiMorph';
+import { AsciiMorph, type AsciiMorphHandle, type BgMode, type Palette, sampleImage } from './components/AsciiMorph';
+import { isLightColor } from './lib/render';
 import { ExportDialog } from './components/ExportDialog';
 import { UnicodePicker } from './components/UnicodePicker';
 import { loadMedia } from './lib/media';
@@ -52,6 +53,8 @@ function App() {
   const [loop, setLoop] = useState(false);
   const [grain, setGrain] = useState(true);
   const [palette, setPalette] = useState<Palette>('lagoon');
+  const [bgMode, setBgMode] = useState<BgMode>('theme');
+  const [bgColor, setBgColor] = useState('#0d1117');
   const [charset, setCharset] = useState('classic');
   const [characters, setCharacters] = useState(sets.classic);
   const [showUnicodePicker, setShowUnicodePicker] = useState(false);
@@ -65,6 +68,8 @@ function App() {
   const fileInput = useRef<HTMLInputElement>(null);
   const items = uploaded ? [...presets, { id: 'custom', category: 'YOUR IMAGE', ...uploaded }] : presets;
   const selected = items[active] ?? items[0];
+  const isOverlayDark = bgMode === 'theme' ? palette === 'paper' : bgMode === 'color' ? isLightColor(bgColor) : false;
+
   useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(''), 4500); return () => clearTimeout(t); }, [toast]);
   useEffect(() => { if (!playing || !loop) return; const t = setInterval(() => setActive(a => (a + 1) % items.length), duration + 3300); return () => clearInterval(t); }, [loop, playing, duration, items.length]);
   useEffect(() => () => { if (uploaded) URL.revokeObjectURL(uploaded.file); }, [uploaded]);
@@ -89,8 +94,24 @@ function App() {
     finally { if (uploadTask.current === task) { uploadTask.current = null; setLoadProgress(null); } }
   }
 
-  function reset() { setDensity(9); setDuration(1800); setMotion(35); setPalette('lagoon'); setGrain(true); setCharset('classic'); setCharacters(sets.classic); setShowUnicodePicker(false); setSourceColor(false); setLoop(false); select(0); setToast('Back to a fresh canvas.'); }
-  const code = `<AsciiMorph\n  images={${JSON.stringify(uploaded && active === 4 ? ['/your-image.png'] : presets.map(p => p.file), null, 2)}}\n  activeIndex={${active === 4 ? 0 : active}}\n  characters=${JSON.stringify(characters)}\n  density={${density}}\n  morphDuration={${duration}}\n  colorMode="${sourceColor ? 'source' : 'mono'}"\n  palette="${palette}"\n  motion={${motion}}\n  grain={${grain}}\n  playing={${playing}}\n/>`;
+  function reset() {
+    setDensity(9);
+    setDuration(1800);
+    setMotion(35);
+    setPalette('lagoon');
+    setBgMode('theme');
+    setBgColor('#0d1117');
+    setGrain(true);
+    setCharset('classic');
+    setCharacters(sets.classic);
+    setShowUnicodePicker(false);
+    setSourceColor(false);
+    setLoop(false);
+    select(0);
+    setToast('Back to a fresh canvas.');
+  }
+
+  const code = `<AsciiMorph\n  images={${JSON.stringify(uploaded && active === 4 ? ['/your-image.png'] : presets.map(p => p.file), null, 2)}}\n  activeIndex={${active === 4 ? 0 : active}}\n  characters=${JSON.stringify(characters)}\n  density={${density}}\n  morphDuration={${duration}}\n  colorMode="${sourceColor ? 'source' : 'mono'}"\n  palette="${palette}"\n  bgMode="${bgMode}"\n  bgColor="${bgColor}"\n  motion={${motion}}\n  grain={${grain}}\n  playing={${playing}}\n/>`;
   return (
     <div className="app-shell">
       <header className="site-header">
@@ -105,9 +126,9 @@ function App() {
         <section className={`workspace ${expanded ? 'expanded' : ''}`} aria-label="ASCII art editor">
           <div className="preview-panel">
             <div className="panel-toolbar"><div className="toolbar-title"><span className="live-dot" /> LIVE PREVIEW <span className="toolbar-slash">/</span> <span className="current-name">{selected.name}</span></div><button className="icon-button" title={expanded ? 'Close expanded preview' : 'Expand preview'} aria-label={expanded ? 'Close expanded preview' : 'Expand preview'} onClick={() => setExpanded(!expanded)}>{expanded ? <X size={16} /> : <Expand size={16} />}</button></div>
-            <div className={`art-stage ${dragging ? 'dragging' : ''}`} onDragOver={e => { e.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={e => { e.preventDefault(); setDragging(false); void upload(e.dataTransfer.files[0]); }}>
-              <AsciiMorph ref={art} images={items.map(p => p.file)} activeIndex={active} source={active === 4 ? uploaded?.source : undefined} onSource={setSourceInfo} characters={characters} density={density} morphDuration={duration} colorMode={sourceColor ? 'source' : 'mono'} palette={palette} playing={playing} motion={motion} grain={grain} onCount={setCount} onError={setToast} />
-              <div className={`stage-overlay ${palette === 'paper' ? 'dark-ink' : ''}`}><div className="stage-top"><span>FORM NO. 0{active + 1}</span><span>ASCII / EXPLORATIONS</span></div><div className="stage-heading">{selected.name}<span>{active === 0 ? 'Built from characters. Made to move.' : 'A familiar form. A different language.'}</span></div><div className="stage-bottom"><span><span className="crosshair">+</span> MOVE YOUR CURSOR. MAKE A LITTLE CHAOS.</span><span>500 × 560</span></div></div>
+            <div className={`art-stage ${dragging ? 'dragging' : ''} ${bgMode === 'transparent' ? 'stage-transparent' : ''}`} onDragOver={e => { e.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={e => { e.preventDefault(); setDragging(false); void upload(e.dataTransfer.files[0]); }}>
+              <AsciiMorph ref={art} images={items.map(p => p.file)} activeIndex={active} source={active === 4 ? uploaded?.source : undefined} onSource={setSourceInfo} characters={characters} density={density} morphDuration={duration} colorMode={sourceColor ? 'source' : 'mono'} palette={palette} bgMode={bgMode} bgColor={bgColor} playing={playing} motion={motion} grain={grain} onCount={setCount} onError={setToast} />
+              <div className={`stage-overlay ${isOverlayDark ? 'dark-ink' : ''}`}><div className="stage-top"><span>FORM NO. 0{active + 1}</span><span>ASCII / EXPLORATIONS</span></div><div className="stage-heading">{selected.name}<span>{active === 0 ? 'Built from characters. Made to move.' : 'A familiar form. A different language.'}</span></div><div className="stage-bottom"><span><span className="crosshair">+</span> MOVE YOUR CURSOR. MAKE A LITTLE CHAOS.</span><span>500 × 560</span></div></div>
               {loadProgress !== null && <div className="loading-overlay" role="status"><span>Decoding animation… {loadProgress}%</span><progress max="100" value={loadProgress} /><button onClick={() => uploadTask.current?.abort()}>Cancel</button></div>}
               {dragging && <div className="drop-overlay"><Upload size={30} /> Drop an image to bring it to life</div>}
             </div>
@@ -118,7 +139,60 @@ function App() {
             <div className="settings-section"><div className="section-label"><span>01</span> CHARACTERS</div><label htmlFor="charset">Character set</label><div className="select-wrap"><select id="charset" value={charset} onChange={e => { const val = e.target.value; setCharset(val); if (val !== 'custom') { setCharacters(sets[val as keyof typeof sets]); setShowUnicodePicker(false); } else { setShowUnicodePicker(true); } }}><option value="classic">Classic ASCII</option><option value="minimal">Minimal marks</option><option value="binary">Binary code</option><option value="blocks">Block shades</option><option value="keyboard">All keyboard characters</option><option value="custom">Custom characters</option></select><ChevronDown size={14} /></div><div className="custom-char-row"><input className="characters-input" aria-label="Characters" value={characters} maxLength={150} onChange={e => { setCharacters(e.target.value); setCharset('custom'); }} onBlur={() => { if (!characters.trim()) setCharacters(sets.classic); }} spellCheck={false} /><button type="button" className={`unicode-toggle-btn ${showUnicodePicker ? 'active' : ''}`} onClick={() => { setShowUnicodePicker(prev => !prev); if (charset !== 'custom') setCharset('custom'); }} title={showUnicodePicker ? 'Hide Unicode character palette' : 'Pick Unicode characters'} aria-label="Toggle Unicode character palette" aria-expanded={showUnicodePicker}><Sparkles size={13} /></button></div>{showUnicodePicker && <UnicodePicker characters={characters} onChange={newChars => { setCharacters(newChars); setCharset('custom'); }} maxChars={150} />}
               <div className="range-label"><label htmlFor="density">Density</label><output>{density <= 7 ? 'Fine' : density <= 11 ? 'Balanced' : 'Coarse'}</output></div><input id="density" type="range" min="5" max="17" value={22 - density} onChange={e => setDensity(22 - +e.target.value)} style={{ '--range': `${(17 - density) / 12 * 100}%` } as React.CSSProperties} /><div className="range-hints"><span>Less</span><span>More</span></div>
             </div>
-            <div className="settings-section"><div className="section-label"><span>02</span> LOOK & FEEL</div><div className="range-label"><label>Palette</label><output className="palette-name">{palette}</output></div><div className="palettes">{(['lagoon', 'paper', 'midnight', 'rose'] as Palette[]).map(p => <button key={p} className={`palette ${p} ${palette === p ? 'active' : ''}`} aria-label={`${p} palette`} aria-pressed={palette === p} onClick={() => setPalette(p)}>{palette === p && <Check size={15} />}</button>)}</div><div className="toggle-row"><span>Original image colors</span><button className="toggle" role="switch" aria-label="Original image colors" aria-checked={sourceColor} onClick={() => setSourceColor(!sourceColor)}><span /></button></div><div className="toggle-row"><span>Grain texture <Info size={12}><title>A subtle film-like texture</title></Info></span><button className="toggle" role="switch" aria-label="Grain texture" aria-checked={grain} onClick={() => setGrain(!grain)}><span /></button></div></div>
+            <div className="settings-section">
+              <div className="section-label"><span>02</span> LOOK & FEEL</div>
+              <div className="range-label">
+                <label>Background</label>
+                <output className="palette-name">{bgMode === 'theme' ? palette : bgMode === 'color' ? bgColor : 'transparent'}</output>
+              </div>
+              <div className="bg-mode-tabs" role="tablist" aria-label="Background mode">
+                <button type="button" className={`bg-mode-tab ${bgMode === 'theme' ? 'active' : ''}`} onClick={() => setBgMode('theme')} role="tab" aria-selected={bgMode === 'theme'}>Theme</button>
+                <button type="button" className={`bg-mode-tab ${bgMode === 'color' ? 'active' : ''}`} onClick={() => setBgMode('color')} role="tab" aria-selected={bgMode === 'color'}>Custom Color</button>
+                <button type="button" className={`bg-mode-tab ${bgMode === 'transparent' ? 'active' : ''}`} onClick={() => setBgMode('transparent')} role="tab" aria-selected={bgMode === 'transparent'}>Transparent</button>
+              </div>
+              {bgMode === 'theme' && (
+                <div className="palettes">
+                  {(['lagoon', 'paper', 'midnight', 'rose', 'amber', 'emerald'] as Palette[]).map(p => (
+                    <button key={p} className={`palette ${p} ${palette === p ? 'active' : ''}`} title={`${p.charAt(0).toUpperCase() + p.slice(1)} theme`} aria-label={`${p} palette`} aria-pressed={palette === p} onClick={() => setPalette(p)}>
+                      {palette === p && <Check size={15} />}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {bgMode === 'color' && (
+                <div className="custom-color-controls">
+                  <div className="color-input-row">
+                    <label className="color-picker-wrap" title="Pick custom color">
+                      <input type="color" value={bgColor} onChange={e => setBgColor(e.target.value)} aria-label="Pick background color" />
+                      <span className="color-swatch-display" style={{ backgroundColor: bgColor }} />
+                    </label>
+                    <input type="text" className="hex-code-input" value={bgColor} maxLength={7} spellCheck={false} aria-label="Hex color code" onChange={e => setBgColor(e.target.value)} onBlur={() => { if (!/^#[0-9A-Fa-f]{6}$/.test(bgColor)) setBgColor('#0d1117'); }} />
+                  </div>
+                  <div className="color-swatches" role="group" aria-label="Preset colors">
+                    {[
+                      { label: 'Pitch Black', color: '#000000' },
+                      { label: 'Clean White', color: '#ffffff' },
+                      { label: 'GitHub Dark', color: '#0d1117' },
+                      { label: 'Catppuccin', color: '#1e1e2e' },
+                      { label: 'Midnight Blue', color: '#0b132b' },
+                      { label: 'Deep Plum', color: '#2b1a29' },
+                      { label: 'Dark Pine', color: '#102419' },
+                      { label: 'Warm Espresso', color: '#241a15' },
+                    ].map(s => (
+                      <button key={s.color} type="button" className={`color-swatch ${bgColor.toLowerCase() === s.color.toLowerCase() ? 'active' : ''}`} style={{ backgroundColor: s.color }} title={s.label} aria-label={s.label} onClick={() => setBgColor(s.color)} />
+                    ))}
+                  </div>
+                </div>
+              )}
+              {bgMode === 'transparent' && (
+                <div className="transparent-note">
+                  <span className="transparent-chip" />
+                  <span>Transparent background active. Perfect for overlaying & clean exports.</span>
+                </div>
+              )}
+              <div className="toggle-row"><span>Original image colors</span><button className="toggle" role="switch" aria-label="Original image colors" aria-checked={sourceColor} onClick={() => setSourceColor(!sourceColor)}><span /></button></div>
+              <div className="toggle-row"><span>Grain texture <Info size={12}><title>A subtle film-like texture</title></Info></span><button className="toggle" role="switch" aria-label="Grain texture" aria-checked={grain} onClick={() => setGrain(!grain)}><span /></button></div>
+            </div>
             <div className="settings-section motion-section"><div className="section-label"><span>03</span> MOTION</div><div className="range-label"><label htmlFor="duration">{sourceInfo?.animated ? 'Source timing preserved' : 'Morph duration'}</label><output>{sourceInfo?.animated ? `${(sourceInfo.duration / 1000).toFixed(1)}s` : `${(duration / 1000).toFixed(1)}s`}</output></div><input id="duration" disabled={sourceInfo?.animated} type="range" min="600" max="3600" step="100" value={duration} onChange={e => setDuration(+e.target.value)} style={{ '--range': `${(duration - 600) / 30}%` } as React.CSSProperties} /><div className="range-label second-range"><label htmlFor="motion">Wander</label><output>{motion}%</output></div><input id="motion" type="range" min="0" max="100" value={motion} onChange={e => setMotion(+e.target.value)} style={{ '--range': `${motion}%` } as React.CSSProperties} /><div className="toggle-row cycle-row"><span>Cycle through shapes</span><button className="toggle" role="switch" aria-label="Cycle through shapes" aria-checked={loop} onClick={() => setLoop(!loop)}><span /></button></div></div>
             <div className="export-actions"><button className="primary-button" disabled={!sourceInfo || loadProgress !== null} onClick={() => { setLoop(false); setExportOpen(true); }}><ArrowDownToLine size={16} /> Export animation <span>GIF / WEBP / SVG</span></button><button className="primary-button" onClick={() => art.current?.exportPng()}><ArrowDownToLine size={16} /> Save current frame <span>PNG</span></button><button className="code-button" onClick={() => setModal('code')}><Code2 size={15} /> Get the component</button></div>
           </aside>

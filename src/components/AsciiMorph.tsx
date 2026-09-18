@@ -1,10 +1,10 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import { frameAtTime, samplePixels, type AnimationSource, type Point } from '../lib/animation';
 import { loadMedia } from '../lib/media';
-import { drawGlyphs, type ArtStyle } from '../lib/render';
+import { drawBackground, drawGlyphs, getContrastingInk, themes, type ArtStyle, type BgMode, type Palette } from '../lib/render';
 import { exportAnimation, type ExportFormat, type ExportOptions } from '../lib/export';
 
-export type Palette = 'lagoon' | 'paper' | 'midnight' | 'rose';
+export type { Palette, BgMode };
 export type AsciiMorphHandle = {
   exportPng: () => void; scatter: () => void; replay: () => void;
   exportAnimation: (format: ExportFormat, options: ExportOptions) => Promise<Blob>;
@@ -19,6 +19,9 @@ export type AsciiMorphProps = {
   morphDuration?: number;
   colorMode?: 'source' | 'mono';
   palette?: Palette;
+  bgMode?: BgMode;
+  bgColor?: string;
+  inkColor?: string;
   playing?: boolean;
   motion?: number;
   grain?: boolean;
@@ -27,12 +30,6 @@ export type AsciiMorphProps = {
   className?: string;
 };
 type Particle = Point & { tx: number; ty: number; seed: number; alpha: number; targetAlpha: number; char: number };
-const themes = {
-  lagoon: { bg: '#203c44', glow: '#779f9e', glow2: '#345e72', ink: '#effff8' },
-  paper: { bg: '#f4f1e7', glow: '#fffdf6', glow2: '#e5e4d7', ink: '#455448' },
-  midnight: { bg: '#171d29', glow: '#384565', glow2: '#222b40', ink: '#b9c9f4' },
-  rose: { bg: '#583a47', glow: '#b58b86', glow2: '#765163', ink: '#ffe6cf' },
-};
 
 export async function sampleImage(src: string, gap: number): Promise<Point[]> {
   const response = await fetch(src);
@@ -42,7 +39,17 @@ export async function sampleImage(src: string, gap: number): Promise<Point[]> {
 }
 
 function artStyle(props: AsciiMorphProps): ArtStyle {
-  return { characters: props.characters ?? '@#$%&*+=:-.', density: props.density ?? 9, palette: props.palette ?? 'lagoon', colorMode: props.colorMode ?? 'mono', motion: props.motion ?? 35, grain: props.grain ?? true };
+  return {
+    characters: props.characters ?? '@#$%&*+=:-.',
+    density: props.density ?? 9,
+    palette: props.palette ?? 'lagoon',
+    bgMode: props.bgMode ?? 'theme',
+    bgColor: props.bgColor ?? '#0d1117',
+    inkColor: props.inkColor,
+    colorMode: props.colorMode ?? 'mono',
+    motion: props.motion ?? 35,
+    grain: props.grain ?? true,
+  };
 }
 
 export const AsciiMorph = forwardRef<AsciiMorphHandle, AsciiMorphProps>(function AsciiMorph(props, ref) {
@@ -112,36 +119,27 @@ export const AsciiMorph = forwardRef<AsciiMorphHandle, AsciiMorphProps>(function
     let backgroundKey = '';
     let frame = 0, last = 0, elapsed = 0;
     const pointer = { x: -999, y: -999 };
-    function drawBackground(palette: Palette, grain: boolean) {
-      const { width: w, height: h, dpr } = size.current;
-      background.width = w * dpr; background.height = h * dpr;
-      const bg = background.getContext('2d')!;
-      bg.scale(dpr, dpr);
-      const theme = themes[palette];
-      bg.fillStyle = theme.bg; bg.fillRect(0, 0, w, h);
-      const grad = bg.createRadialGradient(w * .52, h * .45, 0, w * .5, h * .5, w * .63);
-      grad.addColorStop(0, theme.glow); grad.addColorStop(.62, theme.glow2); grad.addColorStop(1, theme.bg);
-      bg.fillStyle = grad; bg.fillRect(0, 0, w, h);
-      if (grain) {
-        const noise = document.createElement('canvas'); noise.width = 180; noise.height = 180;
-        const nc = noise.getContext('2d')!, data = nc.createImageData(180, 180);
-        let seed = 23;
-        for (let i = 0; i < data.data.length; i += 4) {
-          seed = (seed * 16807) % 2147483647;
-          const v = seed % 255;
-          data.data[i] = data.data[i + 1] = data.data[i + 2] = v; data.data[i + 3] = 40;
-        }
-        nc.putImageData(data, 0, 0); bg.fillStyle = bg.createPattern(noise, 'repeat')!; bg.fillRect(0, 0, w, h);
-      }
-    }
     function render(dt = 0) {
       const p = config.current;
       const { width: w, height: h, dpr } = size.current;
       const palette = p.palette ?? 'lagoon';
-      const key = `${w}-${h}-${dpr}-${palette}-${p.grain}`;
-      if (backgroundKey !== key) { drawBackground(palette, p.grain ?? true); backgroundKey = key; }
-      ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1;
-      ctx.drawImage(background, 0, 0);
+      const bgMode = p.bgMode ?? 'theme';
+      const bgColor = p.bgColor ?? '#0d1117';
+      const key = `${w}-${h}-${dpr}-${palette}-${p.grain}-${bgMode}-${bgColor}`;
+      if (backgroundKey !== key) {
+        background.width = w * dpr;
+        background.height = h * dpr;
+        const bg = background.getContext('2d')!;
+        bg.scale(dpr, dpr);
+        drawBackground(bg, w, h, palette, p.grain ?? true, bgMode, bgColor);
+        backgroundKey = key;
+      }
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.globalAlpha = 1;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (bgMode !== 'transparent') {
+        ctx.drawImage(background, 0, 0);
+      }
       const source = sourceRef.current;
       if (source?.animated) {
         const index = frameAtTime(source.frames.map(f => f.delay), sourceTime.current);
@@ -158,8 +156,15 @@ export const AsciiMorph = forwardRef<AsciiMorphHandle, AsciiMorphProps>(function
       ctx.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * (w / 2 - 250 * scale), dpr * (h / 2 - 280 * scale));
       const chars = Array.from(p.characters?.trim() || '@#$%&*+=:-.');
       ctx.font = `${(p.density ?? 9) * .94}px 'Courier New', monospace`;
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
       const easing = 1 - Math.exp(-dt / ((p.morphDuration ?? 1800) / 6));
+      let defaultInk = themes[palette]?.ink ?? '#effff8';
+      if (p.inkColor) {
+        defaultInk = p.inkColor;
+      } else if (bgMode === 'color') {
+        defaultInk = getContrastingInk(bgColor);
+      }
       for (const particle of particles.current) {
         if (dt) {
           particle.x += (particle.tx - particle.x) * easing;
@@ -172,9 +177,12 @@ export const AsciiMorph = forwardRef<AsciiMorphHandle, AsciiMorphProps>(function
         let x = particle.x + Math.sin(elapsed * .0016 + particle.seed) * wobble;
         let y = particle.y + Math.cos(elapsed * .0012 + particle.seed) * wobble;
         const dx = x - pointer.x, dy = y - pointer.y, dist = Math.hypot(dx, dy);
-        if (dist < 65 && dist > 0 && p.playing !== false && !reducedMotion.current) { x += dx / dist * (65 - dist) * .6; y += dy / dist * (65 - dist) * .6; }
+        if (dist < 65 && dist > 0 && p.playing !== false && !reducedMotion.current) {
+          x += dx / dist * (65 - dist) * .6;
+          y += dy / dist * (65 - dist) * .6;
+        }
         ctx.globalAlpha = particle.alpha * (.68 + (Math.sin(particle.seed) + 1) * .16);
-        ctx.fillStyle = p.colorMode === 'source' ? particle.color : themes[palette].ink;
+        ctx.fillStyle = p.colorMode === 'source' ? particle.color : defaultInk;
         ctx.fillText(chars[Math.min(chars.length - 1, Math.floor(particle.char * chars.length))], x, y);
       }
       ctx.globalAlpha = 1;
@@ -200,6 +208,16 @@ export const AsciiMorph = forwardRef<AsciiMorphHandle, AsciiMorphProps>(function
     frame = requestAnimationFrame(tick);
     return () => { cancelAnimationFrame(frame); resize.disconnect(); canvas.removeEventListener('pointermove', move); canvas.removeEventListener('pointerleave', leave); };
   }, []);
-  useEffect(() => { drawRef.current(); }, [props.palette, props.characters, props.colorMode, props.motion, props.grain, props.playing]);
+  useEffect(() => { drawRef.current(); }, [
+    props.palette,
+    props.bgMode,
+    props.bgColor,
+    props.inkColor,
+    props.characters,
+    props.colorMode,
+    props.motion,
+    props.grain,
+    props.playing,
+  ]);
   return <canvas className={props.className} ref={canvasRef} role="img" aria-label="Animated ASCII particle artwork. Move your pointer over the shape to disperse its characters." />;
 });
