@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ArrowDownToLine, ArrowLeft, ArrowRight, ArrowUpRight, Check, ChevronDown, Code2, Expand, ImagePlus, Info, Maximize2, Pause, Play, RotateCcw, Shuffle, Sparkles, Upload, X } from 'lucide-react';
 import { AsciiMorph, type AsciiMorphHandle, type Palette, sampleImage } from './components/AsciiMorph';
 import { ExportDialog } from './components/ExportDialog';
+import { UnicodePicker } from './components/UnicodePicker';
 import { loadMedia } from './lib/media';
 import type { AnimationSource } from './lib/animation';
 
@@ -11,7 +12,13 @@ const presets = [
   { id: 'portrait', name: 'The thinker', category: 'HUMAN FORM', file: '/shapes/portrait.svg' },
   { id: 'rocket', name: 'Lift off', category: 'TO THE STARS', file: '/shapes/rocket.svg' },
 ];
-const sets = { classic: '@#$%&*+=:-.', minimal: '+·:−=', binary: '01', blocks: '░▒▓█' };
+const sets = {
+  classic: '@#$%&*+=:-.',
+  minimal: '+·:−=',
+  binary: '01',
+  blocks: '░▒▓█',
+  keyboard: '!"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~',
+};
 
 function Thumbnail({ src }: { src: string }) {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -47,6 +54,7 @@ function App() {
   const [palette, setPalette] = useState<Palette>('lagoon');
   const [charset, setCharset] = useState('classic');
   const [characters, setCharacters] = useState(sets.classic);
+  const [showUnicodePicker, setShowUnicodePicker] = useState(false);
   const [sourceColor, setSourceColor] = useState(false);
   const [count, setCount] = useState(0);
   const [toast, setToast] = useState('');
@@ -81,7 +89,7 @@ function App() {
     finally { if (uploadTask.current === task) { uploadTask.current = null; setLoadProgress(null); } }
   }
 
-  function reset() { setDensity(9); setDuration(1800); setMotion(35); setPalette('lagoon'); setGrain(true); setCharset('classic'); setCharacters(sets.classic); setSourceColor(false); setLoop(false); select(0); setToast('Back to a fresh canvas.'); }
+  function reset() { setDensity(9); setDuration(1800); setMotion(35); setPalette('lagoon'); setGrain(true); setCharset('classic'); setCharacters(sets.classic); setShowUnicodePicker(false); setSourceColor(false); setLoop(false); select(0); setToast('Back to a fresh canvas.'); }
   const code = `<AsciiMorph\n  images={${JSON.stringify(uploaded && active === 4 ? ['/your-image.png'] : presets.map(p => p.file), null, 2)}}\n  activeIndex={${active === 4 ? 0 : active}}\n  characters=${JSON.stringify(characters)}\n  density={${density}}\n  morphDuration={${duration}}\n  colorMode="${sourceColor ? 'source' : 'mono'}"\n  palette="${palette}"\n  motion={${motion}}\n  grain={${grain}}\n  playing={${playing}}\n/>`;
   return (
     <div className="app-shell">
@@ -107,7 +115,7 @@ function App() {
           </div>
 
           <aside className="settings"><div className="settings-heading"><h2>Make it yours</h2><button className="icon-button" onClick={reset} title="Reset settings" aria-label="Reset settings"><RotateCcw size={15} /></button></div>
-            <div className="settings-section"><div className="section-label"><span>01</span> CHARACTERS</div><label htmlFor="charset">Character set</label><div className="select-wrap"><select id="charset" value={charset} onChange={e => { setCharset(e.target.value); if (e.target.value !== 'custom') setCharacters(sets[e.target.value as keyof typeof sets]); }}><option value="classic">Classic ASCII</option><option value="minimal">Minimal marks</option><option value="binary">Binary code</option><option value="blocks">Block shades</option><option value="custom">Custom characters</option></select><ChevronDown size={14} /></div><input className="characters-input" aria-label="Characters" value={characters} maxLength={50} onChange={e => { setCharacters(e.target.value); setCharset('custom'); }} onBlur={() => { if (!characters.trim()) setCharacters(sets.classic); }} spellCheck={false} />
+            <div className="settings-section"><div className="section-label"><span>01</span> CHARACTERS</div><label htmlFor="charset">Character set</label><div className="select-wrap"><select id="charset" value={charset} onChange={e => { const val = e.target.value; setCharset(val); if (val !== 'custom') { setCharacters(sets[val as keyof typeof sets]); setShowUnicodePicker(false); } else { setShowUnicodePicker(true); } }}><option value="classic">Classic ASCII</option><option value="minimal">Minimal marks</option><option value="binary">Binary code</option><option value="blocks">Block shades</option><option value="keyboard">All keyboard characters</option><option value="custom">Custom characters</option></select><ChevronDown size={14} /></div><div className="custom-char-row"><input className="characters-input" aria-label="Characters" value={characters} maxLength={150} onChange={e => { setCharacters(e.target.value); setCharset('custom'); }} onBlur={() => { if (!characters.trim()) setCharacters(sets.classic); }} spellCheck={false} /><button type="button" className={`unicode-toggle-btn ${showUnicodePicker ? 'active' : ''}`} onClick={() => { setShowUnicodePicker(prev => !prev); if (charset !== 'custom') setCharset('custom'); }} title={showUnicodePicker ? 'Hide Unicode character palette' : 'Pick Unicode characters'} aria-label="Toggle Unicode character palette" aria-expanded={showUnicodePicker}><Sparkles size={13} /></button></div>{showUnicodePicker && <UnicodePicker characters={characters} onChange={newChars => { setCharacters(newChars); setCharset('custom'); }} maxChars={150} />}
               <div className="range-label"><label htmlFor="density">Density</label><output>{density <= 7 ? 'Fine' : density <= 11 ? 'Balanced' : 'Coarse'}</output></div><input id="density" type="range" min="5" max="17" value={22 - density} onChange={e => setDensity(22 - +e.target.value)} style={{ '--range': `${(17 - density) / 12 * 100}%` } as React.CSSProperties} /><div className="range-hints"><span>Less</span><span>More</span></div>
             </div>
             <div className="settings-section"><div className="section-label"><span>02</span> LOOK & FEEL</div><div className="range-label"><label>Palette</label><output className="palette-name">{palette}</output></div><div className="palettes">{(['lagoon', 'paper', 'midnight', 'rose'] as Palette[]).map(p => <button key={p} className={`palette ${p} ${palette === p ? 'active' : ''}`} aria-label={`${p} palette`} aria-pressed={palette === p} onClick={() => setPalette(p)}>{palette === p && <Check size={15} />}</button>)}</div><div className="toggle-row"><span>Original image colors</span><button className="toggle" role="switch" aria-label="Original image colors" aria-checked={sourceColor} onClick={() => setSourceColor(!sourceColor)}><span /></button></div><div className="toggle-row"><span>Grain texture <Info size={12}><title>A subtle film-like texture</title></Info></span><button className="toggle" role="switch" aria-label="Grain texture" aria-checked={grain} onClick={() => setGrain(!grain)}><span /></button></div></div>
