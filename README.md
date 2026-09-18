@@ -4,6 +4,13 @@ Turn images into animated ASCII art with particle morphing, customizable styles,
 
 Built with React, TypeScript, and Canvas 2D. Image masks become characters that morph between shapes using a persistent particle pool.
 
+## Showcase
+
+<p align="center">
+  <img src="public/shapes/quaveo-artscii-logo-optimized.svg" width="48%" alt="Quaveo ArtSCII Logo" />
+  <img src="public/shapes/aiai-artscii-optimized.svg" width="48%" alt="AIAI ArtSCII" />
+</p>
+
 ## Run
 
 ```sh

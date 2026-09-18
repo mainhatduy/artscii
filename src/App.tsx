@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowDownToLine, ArrowLeft, ArrowRight, ArrowUpRight, Check, ChevronDown, Code2, Expand, ImagePlus, Info, Maximize2, Pause, Play, RotateCcw, Shuffle, Sparkles, Upload, X } from 'lucide-react';
 import { AsciiMorph, type AsciiMorphHandle, type BgMode, type Palette, sampleImage } from './components/AsciiMorph';
-import { characterFonts, DEFAULT_FONT_FAMILY, isLightColor } from './lib/render';
+import { characterFonts, DEFAULT_FONT_FAMILY, getContrastingInk, isLightColor, themes } from './lib/render';
 import { DEFAULT_MAX_TIME_STEPS, MAX_TIME_STEPS } from './lib/loop-noise';
 import { ExportDialog } from './components/ExportDialog';
 import { UnicodePicker } from './components/UnicodePicker';
@@ -21,6 +21,19 @@ const sets = {
   blocks: '░▒▓█',
   keyboard: '!"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~',
 };
+
+export type CharColorMode = 'theme' | 'custom' | 'source';
+
+const charColorPresets = [
+  { label: 'Matrix Green', color: '#00ff66' },
+  { label: 'Cyber Cyan', color: '#00f0ff' },
+  { label: 'Neon Pink', color: '#ff007f' },
+  { label: 'Solar Amber', color: '#ffaa00' },
+  { label: 'Electric Violet', color: '#a855f7' },
+  { label: 'Crisp White', color: '#ffffff' },
+  { label: 'Flame Coral', color: '#ff5733' },
+  { label: 'Ice Blue', color: '#38bdf8' },
+];
 
 function Thumbnail({ src }: { src: string }) {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -61,7 +74,8 @@ function App() {
   const [characters, setCharacters] = useState(sets.classic);
   const [fontFamily, setFontFamily] = useState(DEFAULT_FONT_FAMILY);
   const [showUnicodePicker, setShowUnicodePicker] = useState(false);
-  const [sourceColor, setSourceColor] = useState(false);
+  const [charColorMode, setCharColorMode] = useState<CharColorMode>('theme');
+  const [charColor, setCharColor] = useState('#00ff66');
   const [count, setCount] = useState(0);
   const [toast, setToast] = useState('');
   const [modal, setModal] = useState<'about' | 'code' | null>(null);
@@ -72,6 +86,7 @@ function App() {
   const items = uploaded ? [...presets, { id: 'custom', category: 'YOUR IMAGE', ...uploaded }] : presets;
   const selected = items[active] ?? items[0];
   const isOverlayDark = bgMode === 'theme' ? palette === 'paper' : bgMode === 'color' ? isLightColor(bgColor) : false;
+  const activeThemeInk = bgMode === 'color' ? getContrastingInk(bgColor) : (themes[palette]?.ink ?? '#effff8');
 
   useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(''), 4500); return () => clearTimeout(t); }, [toast]);
   useEffect(() => { if (!playing || !loop) return; const t = setInterval(() => setActive(a => (a + 1) % items.length), duration + 3300); return () => clearInterval(t); }, [loop, playing, duration, items.length]);
@@ -110,13 +125,14 @@ function App() {
     setCharacters(sets.classic);
     setFontFamily(DEFAULT_FONT_FAMILY);
     setShowUnicodePicker(false);
-    setSourceColor(false);
+    setCharColorMode('theme');
+    setCharColor('#00ff66');
     setLoop(false);
     select(0);
     setToast('Back to a fresh canvas.');
   }
 
-  const code = `<AsciiMorph\n  images={${JSON.stringify(uploaded && active === 4 ? ['/your-image.png'] : presets.map(p => p.file), null, 2)}}\n  activeIndex={${active === 4 ? 0 : active}}\n  characters=${JSON.stringify(characters)}\n  fontFamily={${JSON.stringify(fontFamily)}}\n  density={${density}}\n  morphDuration={${duration}}\n  colorMode="${sourceColor ? 'source' : 'mono'}"\n  palette="${palette}"\n  bgMode="${bgMode}"\n  bgColor="${bgColor}"\n  motion={${motion}}\n  maxTimeSteps={${maxTimeSteps}}\n  grain={${grain}}\n  playing={${playing}}\n/>`;
+  const code = `<AsciiMorph\n  images={${JSON.stringify(uploaded && active === 4 ? ['/your-image.png'] : presets.map(p => p.file), null, 2)}}\n  activeIndex={${active === 4 ? 0 : active}}\n  characters=${JSON.stringify(characters)}\n  fontFamily={${JSON.stringify(fontFamily)}}\n  density={${density}}\n  morphDuration={${duration}}\n  colorMode="${charColorMode === 'source' ? 'source' : 'mono'}"\n  palette="${palette}"\n  bgMode="${bgMode}"\n  bgColor="${bgColor}"${charColorMode === 'custom' ? `\n  inkColor="${charColor}"` : ''}\n  motion={${motion}}\n  maxTimeSteps={${maxTimeSteps}}\n  grain={${grain}}\n  playing={${playing}}\n/>`;
   return (
     <div className="app-shell">
       <header className="site-header">
@@ -132,7 +148,7 @@ function App() {
           <div className="preview-panel">
             <div className="panel-toolbar"><div className="toolbar-title"><span className="live-dot" /> LIVE PREVIEW <span className="toolbar-slash">/</span> <span className="current-name">{selected.name}</span></div><button className="icon-button" title={expanded ? 'Close expanded preview' : 'Expand preview'} aria-label={expanded ? 'Close expanded preview' : 'Expand preview'} onClick={() => setExpanded(!expanded)}>{expanded ? <X size={16} /> : <Expand size={16} />}</button></div>
             <div className={`art-stage ${dragging ? 'dragging' : ''} ${bgMode === 'transparent' ? 'stage-transparent' : ''}`} onDragOver={e => { e.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={e => { e.preventDefault(); setDragging(false); void upload(e.dataTransfer.files[0]); }}>
-              <AsciiMorph ref={art} images={items.map(p => p.file)} activeIndex={active} source={active === 4 ? uploaded?.source : undefined} onSource={setSourceInfo} characters={characters} fontFamily={fontFamily} density={density} morphDuration={duration} colorMode={sourceColor ? 'source' : 'mono'} palette={palette} bgMode={bgMode} bgColor={bgColor} playing={playing} motion={motion} maxTimeSteps={maxTimeSteps} grain={grain} onCount={setCount} onError={setToast} />
+              <AsciiMorph ref={art} images={items.map(p => p.file)} activeIndex={active} source={active === 4 ? uploaded?.source : undefined} onSource={setSourceInfo} characters={characters} fontFamily={fontFamily} density={density} morphDuration={duration} colorMode={charColorMode === 'source' ? 'source' : 'mono'} palette={palette} bgMode={bgMode} bgColor={bgColor} inkColor={charColorMode === 'custom' ? charColor : undefined} playing={playing} motion={motion} maxTimeSteps={maxTimeSteps} grain={grain} onCount={setCount} onError={setToast} />
               <div className={`stage-overlay ${isOverlayDark ? 'dark-ink' : ''}`}><div className="stage-top"><span>FORM NO. 0{active + 1}</span><span>ASCII / EXPLORATIONS</span></div><div className="stage-heading">{selected.name}<span>{active === 0 ? 'Built from characters. Made to move.' : 'A familiar form. A different language.'}</span></div><div className="stage-bottom"><span><span className="crosshair">+</span> MOVE YOUR CURSOR. MAKE A LITTLE CHAOS.</span><span>500 × 560</span></div></div>
               {loadProgress !== null && <div className="loading-overlay" role="status"><span>Decoding animation… {loadProgress}%</span><progress max="100" value={loadProgress} /><button onClick={() => uploadTask.current?.abort()}>Cancel</button></div>}
               {dragging && <div className="drop-overlay"><Upload size={30} /> Drop an image to bring it to life</div>}
@@ -202,7 +218,44 @@ function App() {
                   <span>Transparent background active. Perfect for overlaying & clean exports.</span>
                 </div>
               )}
-              <div className="toggle-row"><span>Original image colors</span><button className="toggle" role="switch" aria-label="Original image colors" aria-checked={sourceColor} onClick={() => setSourceColor(!sourceColor)}><span /></button></div>
+              <div className="range-label char-color-heading">
+                <label>Character Color</label>
+                <output className="palette-name">{charColorMode === 'theme' ? 'Theme' : charColorMode === 'custom' ? charColor : 'Source Image'}</output>
+              </div>
+              <div className="bg-mode-tabs" role="tablist" aria-label="Character color mode">
+                <button type="button" className={`bg-mode-tab ${charColorMode === 'theme' ? 'active' : ''}`} onClick={() => setCharColorMode('theme')} role="tab" aria-selected={charColorMode === 'theme'}>Theme</button>
+                <button type="button" className={`bg-mode-tab ${charColorMode === 'custom' ? 'active' : ''}`} onClick={() => setCharColorMode('custom')} role="tab" aria-selected={charColorMode === 'custom'}>Custom Color</button>
+                <button type="button" className={`bg-mode-tab ${charColorMode === 'source' ? 'active' : ''}`} onClick={() => setCharColorMode('source')} role="tab" aria-selected={charColorMode === 'source'}>Source Image</button>
+              </div>
+              {charColorMode === 'theme' && (
+                <div className="char-theme-preview">
+                  <span className="char-color-preview-chip" style={{ backgroundColor: activeThemeInk }} />
+                  <span className="char-theme-name">{bgMode === 'color' ? 'Auto-contrast Ink' : `${palette.charAt(0).toUpperCase() + palette.slice(1)} Ink`}</span>
+                  <span className="char-theme-hex">{activeThemeInk}</span>
+                </div>
+              )}
+              {charColorMode === 'custom' && (
+                <div className="custom-color-controls">
+                  <div className="color-input-row">
+                    <label className="color-picker-wrap" title="Pick character color">
+                      <input type="color" value={charColor} onChange={e => setCharColor(e.target.value)} aria-label="Pick character color" />
+                      <span className="color-swatch-display" style={{ backgroundColor: charColor }} />
+                    </label>
+                    <input type="text" className="hex-code-input" value={charColor} maxLength={7} spellCheck={false} aria-label="Character hex color code" onChange={e => setCharColor(e.target.value)} onBlur={() => { if (!/^#[0-9A-Fa-f]{6}$/.test(charColor)) setCharColor('#00ff66'); }} />
+                  </div>
+                  <div className="color-swatches" role="group" aria-label="Preset character colors">
+                    {charColorPresets.map(s => (
+                      <button key={s.color} type="button" className={`color-swatch ${charColor.toLowerCase() === s.color.toLowerCase() ? 'active' : ''}`} style={{ backgroundColor: s.color }} title={s.label} aria-label={s.label} onClick={() => setCharColor(s.color)} />
+                    ))}
+                  </div>
+                </div>
+              )}
+              {charColorMode === 'source' && (
+                <div className="source-color-note">
+                  <Sparkles size={13} />
+                  <span>Characters use colors sampled directly from the image pixels.</span>
+                </div>
+              )}
               <div className="toggle-row"><span>Grain texture <Info size={12}><title>A subtle film-like texture</title></Info></span><button className="toggle" role="switch" aria-label="Grain texture" aria-checked={grain} onClick={() => setGrain(!grain)}><span /></button></div>
             </div>
             <div className="settings-section motion-section"><div className="section-label"><span>03</span> MOTION</div><div className="range-label"><label htmlFor="duration">{sourceInfo?.animated ? 'Source timing preserved' : 'Morph duration'}</label><output>{sourceInfo?.animated ? `${(sourceInfo.duration / 1000).toFixed(1)}s` : `${(duration / 1000).toFixed(1)}s`}</output></div><input id="duration" disabled={sourceInfo?.animated} type="range" min="600" max="3600" step="100" value={duration} onChange={e => setDuration(+e.target.value)} style={{ '--range': `${(duration - 600) / 30}%` } as React.CSSProperties} /><div className="range-label second-range"><label htmlFor="motion">Wander</label><output>{motion}%</output></div><input id="motion" type="range" min="0" max="100" value={motion} onChange={e => setMotion(+e.target.value)} style={{ '--range': `${motion}%` } as React.CSSProperties} /><div className="range-label second-range"><label htmlFor="time-steps">Time steps / loop</label><output htmlFor="time-steps">{maxTimeSteps}</output></div><input id="time-steps" type="range" min="4" max={MAX_TIME_STEPS} step="4" value={maxTimeSteps} aria-describedby="time-steps-help" onChange={e => setMaxTimeSteps(+e.target.value)} style={{ '--range': `${(maxTimeSteps - 4) / (MAX_TIME_STEPS - 4) * 100}%` } as React.CSSProperties} /><p id="time-steps-help" className="time-steps-help">More samples, more varied timing. Characters still change slowly.</p><div className="toggle-row cycle-row"><span>Cycle through shapes</span><button className="toggle" role="switch" aria-label="Cycle through shapes" aria-checked={loop} onClick={() => setLoop(!loop)}><span /></button></div></div>

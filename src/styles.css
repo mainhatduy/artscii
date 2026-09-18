@@ -58,6 +58,13 @@ button:disabled{opacity:.45;cursor:not-allowed}input:disabled{opacity:.4;cursor:
 .color-swatch.active{outline:2px solid #7c915e;outline-offset:1px}
 .transparent-note{display:flex;align-items:center;gap:8px;padding:8px 10px;background:#eef3e6;border:1px dashed #cad5be;border-radius:6px;margin:0 0 16px;font-size:9px;color:#5a6c4c;line-height:1.4}
 .transparent-chip{width:16px;height:16px;border-radius:3px;border:1px solid #b8c4aa;flex-shrink:0;background-image:linear-gradient(45deg,#cbd3c2 25%,transparent 25%),linear-gradient(-45deg,#cbd3c2 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#cbd3c2 75%),linear-gradient(-45deg,transparent 75%,#cbd3c2 75%);background-size:8px 8px;background-position:0 0,0 4px,4px -4px,-4px 0}
+.char-color-heading{margin-top:16px}
+.char-theme-preview{display:flex;align-items:center;gap:8px;padding:8px 10px;background:#f2f5ec;border:1px solid #dfe5d5;border-radius:6px;margin:0 0 16px;font-size:9px;color:#5a6c4c}
+.char-color-preview-chip{width:16px;height:16px;border-radius:3px;border:1px solid rgba(0,0,0,.15);flex-shrink:0;box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.char-theme-name{font-weight:550;color:#3e4e34}
+.char-theme-hex{margin-left:auto;font-family:'Space Mono',monospace;font-size:9px;color:#7a8a6c;text-transform:uppercase}
+.source-color-note{display:flex;align-items:center;gap:8px;padding:8px 10px;background:#eef3e6;border:1px dashed #cad5be;border-radius:6px;margin:0 0 16px;font-size:9px;color:#5a6c4c;line-height:1.4}
+.source-color-note svg{color:#7c915e;flex-shrink:0}
 .art-stage.stage-transparent{background-color:#1c242b;background-image:linear-gradient(45deg,#24303a 25%,transparent 25%),linear-gradient(-45deg,#24303a 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#24303a 75%),linear-gradient(-45deg,transparent 75%,#24303a 75%);background-size:20px 20px;background-position:0 0,0 10px,10px -10px,-10px 0}
 
 
